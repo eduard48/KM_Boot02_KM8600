@@ -1,0 +1,1638 @@
+   1               		.file	"km_boot_v02.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+ 115               	recvchar:
+   1:km_boot_v02.c **** /******************************************************************************
+   2:km_boot_v02.c ****  * km_boot_v02.c
+   3:km_boot_v02.c ****  *
+   4:km_boot_v02.c ****  * Created: 21.02.2015 10:39:39
+   5:km_boot_v02.c ****  *  Author: Ed
+   6:km_boot_v02.c ****  *****************************************************************************/ 
+   7:km_boot_v02.c **** 
+   8:km_boot_v02.c **** /*****************************************************************************
+   9:km_boot_v02.c **** *
+  10:km_boot_v02.c **** * AVRPROG compatible boot-loader
+  11:km_boot_v02.c **** * Version  : 2.0
+  12:km_boot_v02.c **** * Compiler : avr-gcc 4.1.2 / avr-libc 1.4.6
+  13:km_boot_v02.c **** * size     : depends on features and startup ( минимальный размер < 512 слов)
+  14:km_boot_v02.c **** * by       : Переделка загрузчика от M. Thomas (2008)
+  15:km_boot_v02.c **** *
+  16:km_boot_v02.c **** ****************************************************************************
+  17:km_boot_v02.c **** *	Программа загрузчика v02 для контроллеров КМ (ATMEGA324P)
+  18:km_boot_v02.c **** * Надо в свойствах проекта указать используемый внешний Makefile!!!
+  19:km_boot_v02.c **** *  Открыть makefile и прочитать, там указаны параметры линковщика.  
+  20:km_boot_v02.c **** *  тамже выбрать размер Boot Size (BOOTSIZE=xxxx) и тип CPU
+  21:km_boot_v02.c **** *  Остальные конфигурации выставить в этом файле.
+  22:km_boot_v02.c **** *
+  23:km_boot_v02.c **** *  программа имеет минимальный размер 512 слов это (1024, 0x400 байтов) 
+  24:km_boot_v02.c **** *  т.е. на размер bootloader-section необходимо отводить 1024 байта. 
+  25:km_boot_v02.c **** *
+  26:km_boot_v02.c **** * Написана для контроллеров SEM КМ01-8600.М и КМ01-2442.М - работает!!!
+  27:km_boot_v02.c **** *
+  28:km_boot_v02.c **** * ------------- Прошивка фъюсов --------------------------------------------------
+  29:km_boot_v02.c **** * Установить BOOTCZ = 11 (1k boot) и BOOTRST = 1 (при старте, начало проги с boot)
+  30:km_boot_v02.c **** * Здесь надо выбирать объём памяти загрузчика в 2 раза больше чем в Makefile!!!
+  31:km_boot_v02.c **** ****************************************************************************/
+  32:km_boot_v02.c **** 
+  33:km_boot_v02.c **** 
+  34:km_boot_v02.c **** /*  Тактовая частота */
+  35:km_boot_v02.c **** #ifndef F_CPU
+  36:km_boot_v02.c **** //#define F_CPU 7372800
+  37:km_boot_v02.c **** #define F_CPU 14745600
+  38:km_boot_v02.c **** #endif
+  39:km_boot_v02.c **** 
+  40:km_boot_v02.c **** /* UART Скорость UART оптимально 19200 */
+  41:km_boot_v02.c **** //#define BAUDRATE 9600
+  42:km_boot_v02.c **** #define BAUDRATE 19200
+  43:km_boot_v02.c **** 
+  44:km_boot_v02.c **** /***************************************************
+  45:km_boot_v02.c **** * Тип устройства:
+  46:km_boot_v02.c **** *   Для AVRProg выбирать BOOT 
+  47:km_boot_v02.c **** *   Это корректное значение для bootloader.
+  48:km_boot_v02.c **** *   avrdude может определить только part-code для ISP 
+  49:km_boot_v02.c **** ****************************************************/
+  50:km_boot_v02.c **** #define DEVTYPE     DEVTYPE_BOOT
+  51:km_boot_v02.c **** // #define DEVTYPE     DEVTYPE_ISP // это не использую
+  52:km_boot_v02.c **** 
+  53:km_boot_v02.c **** /***************************************************
+  54:km_boot_v02.c ****  * Выбор порта для джампера входа в загрузчик
+  55:km_boot_v02.c ****  * Чтобы войти в загрузчик надо чтобы при запуске этот джампер был замкнут на +5Вольт
+  56:km_boot_v02.c ****  * Это 1 и 2 пин разъема ISP!
+  57:km_boot_v02.c ****  ***************************************************/
+  58:km_boot_v02.c ****  
+  59:km_boot_v02.c **** #define BLPORT		PORTB
+  60:km_boot_v02.c **** #define BLDDR		DDRB
+  61:km_boot_v02.c **** #define BLPIN		PINB
+  62:km_boot_v02.c **** #define BLPNUM		PINB6
+  63:km_boot_v02.c **** 
+  64:km_boot_v02.c **** /***************************************************
+  65:km_boot_v02.c ****  * Выбор порта для индикатора работы загрузчика
+  66:km_boot_v02.c ****  * Светодиод горит - мы в загрузчике (использую всегда)
+  67:km_boot_v02.c **** ****************************************************/
+  68:km_boot_v02.c **** 
+  69:km_boot_v02.c **** //#define ENABLE_BOOT_LED
+  70:km_boot_v02.c **** #define BIPORT		PORTB
+  71:km_boot_v02.c **** #define BIDDR		DDRB
+  72:km_boot_v02.c **** #define BIPIN		PINB
+  73:km_boot_v02.c **** #define BIPNUM		PINB3
+  74:km_boot_v02.c **** 
+  75:km_boot_v02.c **** /****************************************************
+  76:km_boot_v02.c **** * Выбор порта вывода управления передачей
+  77:km_boot_v02.c **** * по RS485 (использую всегда)
+  78:km_boot_v02.c **** *****************************************************/
+  79:km_boot_v02.c **** 
+  80:km_boot_v02.c **** //#define RS485
+  81:km_boot_v02.c **** #define RSPORT	PORTD
+  82:km_boot_v02.c **** #define RSDDR	DDRD
+  83:km_boot_v02.c **** #define RSPNUM	PIND2
+  84:km_boot_v02.c **** 
+  85:km_boot_v02.c **** /****************************************************
+  86:km_boot_v02.c ****  * Выключить Собачий таймер на время загрузчика
+  87:km_boot_v02.c **** *****************************************************/
+  88:km_boot_v02.c **** #define DISABLE_WDT_AT_STARTUP
+  89:km_boot_v02.c **** 
+  90:km_boot_v02.c **** /****************************************************
+  91:km_boot_v02.c ****  * Watchdog-reset is issued at exit 
+  92:km_boot_v02.c ****  * define the timeout-value here (see avr-libc manual)
+  93:km_boot_v02.c **** *****************************************************/
+  94:km_boot_v02.c **** #define EXIT_WDT_TIME   WDTO_250MS
+  95:km_boot_v02.c **** 
+  96:km_boot_v02.c **** /****************************************************
+  97:km_boot_v02.c ****  * Выбор режима загрузчика
+  98:km_boot_v02.c ****  * SIMPLE-Mode - Загрузчик стартует когда на джампер подано +5В
+  99:km_boot_v02.c ****  *   переход к основной программе осуществляется после сброса 
+ 100:km_boot_v02.c ****  *   (джампер должн быть разомкнут) либо по команде от программатора
+ 101:km_boot_v02.c ****  *   При этом режиме вывод на джампер конфигурируется как вход-с без подтяга,
+ 102:km_boot_v02.c ****  *   но при выходе из загрузчика все выставляется по умолчанию
+ 103:km_boot_v02.c ****  * BOOTICE-Mode - для зашивки  JTAGICE файла upgrade.ebn в Мегу16.
+ 104:km_boot_v02.c ****  *   что превращает ее в JTAG отладчик. Разумеется нужно добавить весь необходимый
+ 105:km_boot_v02.c ****  *   обвяз на кристалл для этого. И частота должна быть везде прописана как 7372800
+ 106:km_boot_v02.c ****  *   в F_CPU Для совместимости с родной прошивкой JTAG ICE
+ 107:km_boot_v02.c ****  * WAIT-mode Bootloader ожидает команды на вход, если ее не было в течении промежутка времени
+ 108:km_boot_v02.c ****  *   (который настраивается) то происходит переход к основной программе.
+ 109:km_boot_v02.c ****  *****************************************************/
+ 110:km_boot_v02.c **** //#define START_SIMPLE
+ 111:km_boot_v02.c **** #define START_WAIT
+ 112:km_boot_v02.c **** //#define START_BOOTICE
+ 113:km_boot_v02.c **** 
+ 114:km_boot_v02.c **** /* Команда для входа в загрузчик в START_WAIT */
+ 115:km_boot_v02.c **** #define START_WAIT_UARTCHAR 'S'
+ 116:km_boot_v02.c **** 
+ 117:km_boot_v02.c **** /* Выдержка для START_WAIT mode ( t = WAIT_TIME * 10ms ) */
+ 118:km_boot_v02.c **** #define WAIT_VALUE 400 /* сейчас: 400*10ms = 3000ms = 3sec */
+ 119:km_boot_v02.c **** 
+ 120:km_boot_v02.c **** /******************************************************************
+ 121:km_boot_v02.c **** * Запрет чтения программы bootloader для самой программы bootloader
+ 122:km_boot_v02.c **** * запрет на чтение flash (читаются пустые значения (0xFFFF))
+ 123:km_boot_v02.c **** *******************************************************************/
+ 124:km_boot_v02.c **** //#define READ_PROTECT_BOOTLOADER
+ 125:km_boot_v02.c **** 
+ 126:km_boot_v02.c **** #define VERSION_HIGH '0'
+ 127:km_boot_v02.c **** #define VERSION_LOW  '8'
+ 128:km_boot_v02.c **** 
+ 129:km_boot_v02.c **** #define GET_LOCK_BITS           0x0001
+ 130:km_boot_v02.c **** #define GET_LOW_FUSE_BITS       0x0000
+ 131:km_boot_v02.c **** #define GET_HIGH_FUSE_BITS      0x0003
+ 132:km_boot_v02.c **** #define GET_EXTENDED_FUSE_BITS  0x0002
+ 133:km_boot_v02.c **** 
+ 134:km_boot_v02.c **** /* Расчет делителя частоты для USART*/
+ 135:km_boot_v02.c **** #define UART_CALC_BAUDRATE(baudRate) ((uint32_t)((F_CPU) + ((uint32_t)baudRate * 8UL)) / ((uint32_t
+ 136:km_boot_v02.c **** 
+ 137:km_boot_v02.c **** /* Включаемые файлы */
+ 138:km_boot_v02.c **** 
+ 139:km_boot_v02.c **** #include <stdint.h>
+ 140:km_boot_v02.c **** #include <avr/io.h>
+ 141:km_boot_v02.c **** #include <avr/wdt.h>
+ 142:km_boot_v02.c **** #include <avr/boot.h>
+ 143:km_boot_v02.c **** #include <avr/pgmspace.h>
+ 144:km_boot_v02.c **** #include <avr/eeprom.h>
+ 145:km_boot_v02.c **** #include <avr/interrupt.h>
+ 146:km_boot_v02.c **** #include <util/delay.h>
+ 147:km_boot_v02.c **** 
+ 148:km_boot_v02.c **** #include "km_boot_v02.h"
+ 149:km_boot_v02.c **** 
+ 150:km_boot_v02.c **** uint8_t gBuffer[SPM_PAGESIZE];
+ 151:km_boot_v02.c **** 
+ 152:km_boot_v02.c **** #if defined(BOOTLOADERHASNOVECTORS)
+ 153:km_boot_v02.c **** 	#warning "This Bootloader does not link interrupt vectors - see makefile"
+ 154:km_boot_v02.c **** 	/* make the linker happy - it wants to see __vector_default */
+ 155:km_boot_v02.c **** 	// void __vector_default(void) { ; }
+ 156:km_boot_v02.c **** 	void __vector_default(void) { ; }
+ 157:km_boot_v02.c **** #endif
+ 158:km_boot_v02.c **** 
+ 159:km_boot_v02.c **** static void sendchar(uint8_t data)
+ 160:km_boot_v02.c **** {
+ 161:km_boot_v02.c **** 	RSPORT |= (1<<RSPNUM);							// 1 на выводе TXE
+ 162:km_boot_v02.c **** 	UART_DATA = data;								// передать байт в буфер
+ 163:km_boot_v02.c **** 	while (!(UART_STATUS & (1<<UART_TXREADY))); 	// Ждать конца передачи
+ 164:km_boot_v02.c **** 	UART_STATUS |= (1<<UART_TXREADY);				// Сбросить флаг т.к. нет прерываний
+ 165:km_boot_v02.c **** 	_delay_us(500);									// Задержка для передачи последнего байта (по другому не работает!)
+ 166:km_boot_v02.c **** 	RSPORT &= ~(1<<RSPNUM);						// 0 на выводе TXE
+ 167:km_boot_v02.c **** }
+ 168:km_boot_v02.c **** 
+ 169:km_boot_v02.c **** static uint8_t recvchar(void)
+ 170:km_boot_v02.c **** {
+ 117               	.LM0:
+ 118               	.LFBB1:
+ 119               	/* prologue: function */
+ 120               	/* frame size = 0 */
+ 121               	/* stack size = 0 */
+ 122               	.L__stack_usage = 0
+ 123               	.L3:
+ 171:km_boot_v02.c **** 	while (!(UART_STATUS & (1<<UART_RXREADY))); 	// Ждать символ
+ 125               	.LM1:
+ 126 0000 8091 C000 		lds r24,192
+ 127 0004 87FF      		sbrs r24,7
+ 128 0006 00C0      		rjmp .L3
+ 172:km_boot_v02.c **** 	return UART_DATA;								// Вернуться с принятым символом
+ 130               	.LM2:
+ 131 0008 8091 C600 		lds r24,198
+ 173:km_boot_v02.c **** }
+ 133               	.LM3:
+ 134 000c 0895      		ret
+ 136               	.Lscope1:
+ 140               	sendchar:
+ 160:km_boot_v02.c **** 	RSPORT |= (1<<RSPNUM);							// 1 на выводе TXE
+ 142               	.LM4:
+ 143               	.LFBB2:
+ 144               	/* prologue: function */
+ 145               	/* frame size = 0 */
+ 146               	/* stack size = 0 */
+ 147               	.L__stack_usage = 0
+ 161:km_boot_v02.c **** 	UART_DATA = data;								// передать байт в буфер
+ 149               	.LM5:
+ 150 000e 5A9A      		sbi 0xb,2
+ 162:km_boot_v02.c **** 	while (!(UART_STATUS & (1<<UART_TXREADY))); 	// Ждать конца передачи
+ 152               	.LM6:
+ 153 0010 8093 C600 		sts 198,r24
+ 154               	.L7:
+ 163:km_boot_v02.c **** 	UART_STATUS |= (1<<UART_TXREADY);				// Сбросить флаг т.к. нет прерываний
+ 156               	.LM7:
+ 157 0014 8091 C000 		lds r24,192
+ 158 0018 85FF      		sbrs r24,5
+ 159 001a 00C0      		rjmp .L7
+ 164:km_boot_v02.c **** 	_delay_us(500);									// Задержка для передачи последнего байта (по другому не работает!)
+ 161               	.LM8:
+ 162 001c 8091 C000 		lds r24,192
+ 163 0020 8062      		ori r24,lo8(32)
+ 164 0022 8093 C000 		sts 192,r24
+ 165               	.LBB8:
+ 166               	.LBB9:
+ 168               	.Ltext1:
+   1:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** /* Copyright (c) 2002, Marek Michalkiewicz
+   2:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Copyright (c) 2004,2005,2007 Joerg Wunsch
+   3:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Copyright (c) 2007  Florin-Viorel Petrov
+   4:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    All rights reserved.
+   5:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+   6:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Redistribution and use in source and binary forms, with or without
+   7:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    modification, are permitted provided that the following conditions are met:
+   8:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+   9:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    * Redistributions of source code must retain the above copyright
+  10:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****      notice, this list of conditions and the following disclaimer.
+  11:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  12:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    * Redistributions in binary form must reproduce the above copyright
+  13:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****      notice, this list of conditions and the following disclaimer in
+  14:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****      the documentation and/or other materials provided with the
+  15:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****      distribution.
+  16:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  17:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    * Neither the name of the copyright holders nor the names of
+  18:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****      contributors may be used to endorse or promote products derived
+  19:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****      from this software without specific prior written permission.
+  20:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  21:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  22:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  23:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  24:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  25:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  26:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  27:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  28:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  29:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  30:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  31:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   POSSIBILITY OF SUCH DAMAGE. */
+  32:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  33:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** /* $Id$ */
+  34:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  35:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #ifndef _UTIL_DELAY_H_
+  36:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #define _UTIL_DELAY_H_ 1
+  37:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  38:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #ifndef __HAS_DELAY_CYCLES
+  39:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #define __HAS_DELAY_CYCLES 1
+  40:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #endif
+  41:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  42:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #include <inttypes.h>
+  43:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #include <util/delay_basic.h>
+  44:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #include <math.h>
+  45:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  46:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** /** \file */
+  47:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** /** \defgroup util_delay <util/delay.h>: Convenience functions for busy-wait delay loops
+  48:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     \code
+  49:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     #define F_CPU 1000000UL  // 1 MHz
+  50:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     //#define F_CPU 14.7456E6
+  51:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     #include <util/delay.h>
+  52:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     \endcode
+  53:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  54:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     \note As an alternative method, it is possible to pass the
+  55:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     F_CPU macro down to the compiler from the Makefile.
+  56:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     Obviously, in that case, no \c \#define statement should be
+  57:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     used.
+  58:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  59:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     The functions in this header file are wrappers around the basic
+  60:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     busy-wait functions from <util/delay_basic.h>.  They are meant as
+  61:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     convenience functions where actual time values can be specified
+  62:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     rather than a number of cycles to wait for.  The idea behind is
+  63:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     that compile-time constant expressions will be eliminated by
+  64:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     compiler optimization so floating-point expressions can be used
+  65:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     to calculate the number of delay cycles needed based on the CPU
+  66:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     frequency passed by the macro F_CPU.
+  67:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  68:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     \note In order for these functions to work as intended, compiler
+  69:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     optimizations <em>must</em> be enabled, and the delay time
+  70:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     <em>must</em> be an expression that is a known constant at
+  71:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     compile-time.  If these requirements are not met, the resulting
+  72:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     delay will be much longer (and basically unpredictable), and
+  73:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     applications that otherwise do not use floating-point calculations
+  74:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     will experience severe code bloat by the floating-point library
+  75:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     routines linked into the application.
+  76:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  77:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     The functions available allow the specification of microsecond, and
+  78:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     millisecond delays directly, using the application-supplied macro
+  79:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     F_CPU as the CPU clock frequency (in Hertz).
+  80:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  81:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** */
+  82:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  83:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #if !defined(__DOXYGEN__)
+  84:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** static inline void _delay_us(double __us) __attribute__((always_inline));
+  85:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** static inline void _delay_ms(double __ms) __attribute__((always_inline));
+  86:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #endif
+  87:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  88:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #ifndef F_CPU
+  89:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** /* prevent compiler error by supplying a default */
+  90:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** # warning "F_CPU not defined for <util/delay.h>"
+  91:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** # define F_CPU 1000000UL
+  92:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #endif
+  93:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  94:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #ifndef __OPTIMIZE__
+  95:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** # warning "Compiler optimizations disabled; functions from <util/delay.h> won't work as designed"
+  96:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #endif
+  97:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+  98:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+  99:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 100:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   __STDC_HOSTED__
+ 101:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #  include <math.h>
+ 102:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #endif
+ 103:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 104:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** /**
+ 105:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    \ingroup util_delay
+ 106:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 107:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Perform a delay of \c __ms milliseconds, using _delay_loop_2().
+ 108:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 109:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    The macro F_CPU is supposed to be defined to a
+ 110:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    constant defining the CPU clock frequency (in Hertz).
+ 111:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 112:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    The maximal possible delay is 262.14 ms / F_CPU in MHz.
+ 113:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 114:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    When the user request delay which exceed the maximum possible one,
+ 115:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    _delay_ms() provides a decreased resolution functionality. In this
+ 116:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    mode _delay_ms() will work with a resolution of 1/10 ms, providing
+ 117:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    delays up to 6.5535 seconds (independent from CPU frequency).  The
+ 118:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    user will not be informed about decreased resolution.
+ 119:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 120:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    If the avr-gcc toolchain has __builtin_avr_delay_cycles(unsigned long)
+ 121:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    support, maximal possible delay is 4294967.295 ms/ F_CPU in MHz. For
+ 122:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    values greater than the maximal possible delay, overflows results in
+ 123:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    no delay i.e., 0ms.
+ 124:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 125:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Conversion of __us into clock cycles may not always result in integer.
+ 126:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    By default, the clock cycles rounded up to next integer. This ensures that
+ 127:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    the user gets atleast __us microseconds of delay.
+ 128:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 129:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Alternatively, user can define __DELAY_ROUND_DOWN__ and __DELAY_ROUND_CLOSEST__
+ 130:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    to round down and round to closest integer.
+ 131:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 132:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Note: The new implementation of _delay_ms(double __ms) with 
+ 133:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     __builtin_avr_delay_cycles(unsigned long) support is not backward compatible. 
+ 134:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    User can define __DELAY_BACKWARD_COMPATIBLE__ to get a backward compatible delay.
+ 135:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Also, the backward compatible
+ 136:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    algorithm will be chosen if the code is compiled in a <em>freestanding
+ 137:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    environment</em> (GCC option \c -ffreestanding), as the math functions
+ 138:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    required for rounding are not available to the compiler then.
+ 139:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 140:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****  */
+ 141:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** void
+ 142:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** _delay_ms(double __ms)
+ 143:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** {
+ 144:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	double __tmp ; 
+ 145:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 146:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 147:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   __STDC_HOSTED__
+ 148:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	uint32_t __ticks_dc;
+ 149:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	extern void __builtin_avr_delay_cycles(unsigned long);
+ 150:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	__tmp = ((F_CPU) / 1e3) * __ms;
+ 151:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 152:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	#if defined(__DELAY_ROUND_DOWN__)
+ 153:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		__ticks_dc = (uint32_t)fabs(__tmp);
+ 154:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 155:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	#elif defined(__DELAY_ROUND_CLOSEST__)
+ 156:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		__ticks_dc = (uint32_t)(fabs(__tmp)+0.5);
+ 157:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 158:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	#else
+ 159:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		//round up by default
+ 160:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+ 161:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	#endif
+ 162:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 163:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 164:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 165:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #else
+ 166:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	uint16_t __ticks;
+ 167:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	__tmp = ((F_CPU) / 4e3) * __ms;
+ 168:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	if (__tmp < 1.0)
+ 169:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		__ticks = 1;
+ 170:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	else if (__tmp > 65535)
+ 171:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	{
+ 172:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		//	__ticks = requested delay in 1/10 ms
+ 173:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		__ticks = (uint16_t) (__ms * 10.0);
+ 174:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		while(__ticks)
+ 175:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		{
+ 176:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 			// wait 1/10 ms
+ 177:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 			_delay_loop_2(((F_CPU) / 4e3) / 10);
+ 178:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 			__ticks --;
+ 179:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		}
+ 180:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		return;
+ 181:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	}
+ 182:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	else
+ 183:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		__ticks = (uint16_t)__tmp;
+ 184:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	_delay_loop_2(__ticks);
+ 185:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #endif
+ 186:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** }
+ 187:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 188:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** /**
+ 189:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    \ingroup util_delay
+ 190:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 191:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Perform a delay of \c __us microseconds, using _delay_loop_1().
+ 192:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 193:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    The macro F_CPU is supposed to be defined to a
+ 194:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    constant defining the CPU clock frequency (in Hertz).
+ 195:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 196:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    The maximal possible delay is 768 us / F_CPU in MHz.
+ 197:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 198:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    If the user requests a delay greater than the maximal possible one,
+ 199:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    _delay_us() will automatically call _delay_ms() instead.  The user
+ 200:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    will not be informed about this case.
+ 201:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 202:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    If the avr-gcc toolchain has __builtin_avr_delay_cycles(unsigned long)
+ 203:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    support, maximal possible delay is 4294967.295 us/ F_CPU in MHz. For
+ 204:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    values greater than the maximal possible delay, overflow results in
+ 205:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    no delay i.e., 0us.
+ 206:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   
+ 207:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Conversion of __us into clock cycles may not always result in integer.
+ 208:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    By default, the clock cycles rounded up to next integer. This ensures that
+ 209:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    the user gets atleast __us microseconds of delay.
+ 210:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 211:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Alternatively, user can define __DELAY_ROUND_DOWN__ and __DELAY_ROUND_CLOSEST__
+ 212:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    to round down and round to closest integer.
+ 213:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****  
+ 214:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Note: The new implementation of _delay_us(double __us) with 
+ 215:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****     __builtin_avr_delay_cycles(unsigned long) support is not backward compatible.
+ 216:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    User can define __DELAY_BACKWARD_COMPATIBLE__ to get a backward compatible delay.
+ 217:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    Also, the backward compatible
+ 218:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    algorithm will be chosen if the code is compiled in a <em>freestanding
+ 219:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    environment</em> (GCC option \c -ffreestanding), as the math functions
+ 220:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****    required for rounding are not available to the compiler then.
+ 221:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 222:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****  */
+ 223:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** void
+ 224:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** _delay_us(double __us)
+ 225:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** {
+ 226:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	double __tmp ; 
+ 227:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && \
+ 228:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   !defined(__DELAY_BACKWARD_COMPATIBLE__) &&	   \
+ 229:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h ****   __STDC_HOSTED__
+ 230:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	uint32_t __ticks_dc;
+ 231:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	extern void __builtin_avr_delay_cycles(unsigned long);
+ 232:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	__tmp = ((F_CPU) / 1e6) * __us;
+ 233:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 234:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	#if defined(__DELAY_ROUND_DOWN__)
+ 235:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		__ticks_dc = (uint32_t)fabs(__tmp);
+ 236:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 237:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	#elif defined(__DELAY_ROUND_CLOSEST__)
+ 238:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		__ticks_dc = (uint32_t)(fabs(__tmp)+0.5);
+ 239:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 240:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	#else
+ 241:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		//round up by default
+ 242:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+ 243:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	#endif
+ 244:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 245:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 170               	.LM9:
+ 171 0026 83E3      		ldi r24,lo8(1843)
+ 172 0028 97E0      		ldi r25,hi8(1843)
+ 173 002a 0197      		1: sbiw r24,1
+ 174 002c 01F4      		brne 1b
+ 175               	.LBE9:
+ 176               	.LBE8:
+ 178               	.Ltext2:
+ 166:km_boot_v02.c **** }
+ 180               	.LM10:
+ 181 002e 5A98      		cbi 0xb,2
+ 182 0030 0895      		ret
+ 184               	.Lscope2:
+ 187               	send_boot:
+ 174:km_boot_v02.c **** 
+ 175:km_boot_v02.c **** static inline void eraseFlash(void)
+ 176:km_boot_v02.c **** {
+ 177:km_boot_v02.c **** 	// стирание только основной программы (bootloader защищен (не стирается))
+ 178:km_boot_v02.c **** 	uint32_t addr = 0;
+ 179:km_boot_v02.c **** 	while (APP_END > addr) 
+ 180:km_boot_v02.c **** 		{
+ 181:km_boot_v02.c **** 		boot_page_erase(addr);		// Выполняет стирание страницы
+ 182:km_boot_v02.c **** 		boot_spm_busy_wait();		// Ждать конца стирания страницы.
+ 183:km_boot_v02.c **** 		addr += SPM_PAGESIZE;		// перейти к следующей странице
+ 184:km_boot_v02.c **** 		}
+ 185:km_boot_v02.c **** 	boot_rww_enable();
+ 186:km_boot_v02.c **** }
+ 187:km_boot_v02.c **** 
+ 188:km_boot_v02.c **** static inline void recvBuffer(pagebuf_t size)
+ 189:km_boot_v02.c **** {
+ 190:km_boot_v02.c **** 	pagebuf_t cnt;
+ 191:km_boot_v02.c **** 	uint8_t *tmp = gBuffer;
+ 192:km_boot_v02.c **** 
+ 193:km_boot_v02.c **** 	for (cnt = 0; cnt < sizeof(gBuffer); cnt++) 
+ 194:km_boot_v02.c **** 		{
+ 195:km_boot_v02.c **** 		*tmp++ = (cnt < size) ? recvchar() : 0xFF;
+ 196:km_boot_v02.c **** 		}
+ 197:km_boot_v02.c **** }
+ 198:km_boot_v02.c **** 
+ 199:km_boot_v02.c **** static inline uint16_t writeFlashPage(uint16_t waddr, pagebuf_t size)
+ 200:km_boot_v02.c **** {
+ 201:km_boot_v02.c **** 	uint32_t pagestart = (uint32_t)waddr<<1;
+ 202:km_boot_v02.c **** 	uint32_t baddr = pagestart;
+ 203:km_boot_v02.c **** 	uint16_t data;
+ 204:km_boot_v02.c **** 	uint8_t *tmp = gBuffer;
+ 205:km_boot_v02.c **** 
+ 206:km_boot_v02.c **** 	do 
+ 207:km_boot_v02.c **** 		{
+ 208:km_boot_v02.c **** 		data = *tmp++;
+ 209:km_boot_v02.c **** 		data |= *tmp++ << 8;
+ 210:km_boot_v02.c **** 		boot_page_fill(baddr, data);	// вызов asm подпрограммы.
+ 211:km_boot_v02.c **** 
+ 212:km_boot_v02.c **** 		baddr += 2;			// выбрать следующее слово в памяти
+ 213:km_boot_v02.c **** 		size -= 2;			// уменьшить указатель кол-ва байтов для записи
+ 214:km_boot_v02.c **** 		} 
+ 215:km_boot_v02.c **** 	while (size);				// выполнять пока все не будет записано
+ 216:km_boot_v02.c **** 
+ 217:km_boot_v02.c **** 	boot_page_write(pagestart);
+ 218:km_boot_v02.c **** 	boot_spm_busy_wait();
+ 219:km_boot_v02.c **** 	boot_rww_enable();		// перейти в RWW секцию
+ 220:km_boot_v02.c **** 
+ 221:km_boot_v02.c **** 	return baddr>>1;
+ 222:km_boot_v02.c **** }
+ 223:km_boot_v02.c **** 
+ 224:km_boot_v02.c **** static inline uint16_t writeEEpromPage(uint16_t address, pagebuf_t size)
+ 225:km_boot_v02.c **** {
+ 226:km_boot_v02.c **** 	uint8_t *tmp = gBuffer;
+ 227:km_boot_v02.c **** 
+ 228:km_boot_v02.c **** 	do 
+ 229:km_boot_v02.c **** 		{
+ 230:km_boot_v02.c **** 		eeprom_write_byte( (uint8_t*)address, *tmp++ );
+ 231:km_boot_v02.c **** 		address++;			// выбрать следующий байт
+ 232:km_boot_v02.c **** 		size--;				// уменьшить указатель кол-ва байтов для записи
+ 233:km_boot_v02.c **** 		}
+ 234:km_boot_v02.c **** 	while (size);				// выполнять пока все не будет записано
+ 235:km_boot_v02.c **** 
+ 236:km_boot_v02.c **** 	// eeprom_busy_wait();
+ 237:km_boot_v02.c **** 
+ 238:km_boot_v02.c **** 	return address;
+ 239:km_boot_v02.c **** }
+ 240:km_boot_v02.c **** 
+ 241:km_boot_v02.c **** static inline uint16_t readFlashPage(uint16_t waddr, pagebuf_t size)
+ 242:km_boot_v02.c **** {
+ 243:km_boot_v02.c **** 	uint32_t baddr = (uint32_t)waddr<<1;
+ 244:km_boot_v02.c **** 	uint16_t data;
+ 245:km_boot_v02.c **** 
+ 246:km_boot_v02.c **** 	do 
+ 247:km_boot_v02.c **** 	{
+ 248:km_boot_v02.c **** 
+ 249:km_boot_v02.c **** #ifndef READ_PROTECT_BOOTLOADER
+ 250:km_boot_v02.c **** #warning "Bootloader not read-protected"
+ 251:km_boot_v02.c **** 
+ 252:km_boot_v02.c **** 	#if defined(RAMPZ)
+ 253:km_boot_v02.c **** 		data = pgm_read_word_far(baddr);
+ 254:km_boot_v02.c **** 	#else
+ 255:km_boot_v02.c **** 		data = pgm_read_word_near(baddr);
+ 256:km_boot_v02.c **** 	#endif
+ 257:km_boot_v02.c **** 
+ 258:km_boot_v02.c **** #else
+ 259:km_boot_v02.c **** 		// если запрещено чтение bootloader
+ 260:km_boot_v02.c **** 		if ( baddr < APP_END ) 
+ 261:km_boot_v02.c **** 		{
+ 262:km_boot_v02.c **** 		#if defined(RAMPZ)
+ 263:km_boot_v02.c **** 			data = pgm_read_word_far(baddr);
+ 264:km_boot_v02.c **** 		#else
+ 265:km_boot_v02.c **** 			data = pgm_read_word_near(baddr);
+ 266:km_boot_v02.c **** 		#endif
+ 267:km_boot_v02.c **** 		}
+ 268:km_boot_v02.c **** 		else 
+ 269:km_boot_v02.c **** 		{
+ 270:km_boot_v02.c **** 		data = 0xFFFF; // вставлять пустышки
+ 271:km_boot_v02.c **** 		}
+ 272:km_boot_v02.c **** #endif
+ 273:km_boot_v02.c **** 		sendchar(data);				// передать младший байт LSB 
+ 274:km_boot_v02.c **** 		sendchar((data >> 8));		// передать старший байт MSB
+ 275:km_boot_v02.c **** 		baddr += 2;					// выбрать следующее слово в памяти (2 байта)
+ 276:km_boot_v02.c **** 		size -= 2;					// вычесть два байта из общего числа читаемых байт
+ 277:km_boot_v02.c **** 	} 
+ 278:km_boot_v02.c **** 	while (size);					// Повторять пока блок не будет прочитан
+ 279:km_boot_v02.c **** 	return baddr>>1;
+ 280:km_boot_v02.c **** }
+ 281:km_boot_v02.c **** 
+ 282:km_boot_v02.c **** static inline uint16_t readEEpromPage(uint16_t address, pagebuf_t size)
+ 283:km_boot_v02.c **** {
+ 284:km_boot_v02.c **** 	do 
+ 285:km_boot_v02.c **** 	{
+ 286:km_boot_v02.c **** 	sendchar( eeprom_read_byte( (uint8_t*)address ) );
+ 287:km_boot_v02.c **** 	address++;
+ 288:km_boot_v02.c **** 	size--;						// уменьшить кол-во считываемых байт
+ 289:km_boot_v02.c **** 	} 
+ 290:km_boot_v02.c **** 	while (size);				// Повторять пока блок не будет прочитан
+ 291:km_boot_v02.c **** 
+ 292:km_boot_v02.c **** 	return address;
+ 293:km_boot_v02.c **** }
+ 294:km_boot_v02.c **** 
+ 295:km_boot_v02.c **** 
+ 296:km_boot_v02.c **** static void send_boot(void)
+ 297:km_boot_v02.c **** {
+ 189               	.LM11:
+ 190               	.LFBB3:
+ 191               	/* prologue: function */
+ 192               	/* frame size = 0 */
+ 193               	/* stack size = 0 */
+ 194               	.L__stack_usage = 0
+ 298:km_boot_v02.c **** 	sendchar('A');
+ 196               	.LM12:
+ 197 0032 81E4      		ldi r24,lo8(65)
+ 198 0034 0E94 0000 		call sendchar
+ 299:km_boot_v02.c **** 	sendchar('V');
+ 200               	.LM13:
+ 201 0038 86E5      		ldi r24,lo8(86)
+ 202 003a 0E94 0000 		call sendchar
+ 300:km_boot_v02.c **** 	sendchar('R');
+ 204               	.LM14:
+ 205 003e 82E5      		ldi r24,lo8(82)
+ 206 0040 0E94 0000 		call sendchar
+ 301:km_boot_v02.c **** 	sendchar('B');
+ 208               	.LM15:
+ 209 0044 82E4      		ldi r24,lo8(66)
+ 210 0046 0E94 0000 		call sendchar
+ 302:km_boot_v02.c **** 	sendchar('O');
+ 212               	.LM16:
+ 213 004a 8FE4      		ldi r24,lo8(79)
+ 214 004c 0E94 0000 		call sendchar
+ 303:km_boot_v02.c **** 	sendchar('O');
+ 216               	.LM17:
+ 217 0050 8FE4      		ldi r24,lo8(79)
+ 218 0052 0E94 0000 		call sendchar
+ 304:km_boot_v02.c **** 	sendchar('T');
+ 220               	.LM18:
+ 221 0056 84E5      		ldi r24,lo8(84)
+ 222 0058 0C94 0000 		jmp sendchar
+ 224               	.Lscope3:
+ 226               	.global	__vector_default
+ 228               	__vector_default:
+ 156:km_boot_v02.c **** #endif
+ 230               	.LM19:
+ 231               	.LFBB4:
+ 232               	/* prologue: function */
+ 233               	/* frame size = 0 */
+ 234               	/* stack size = 0 */
+ 235               	.L__stack_usage = 0
+ 236 005c 0895      		ret
+ 238               	.Lscope4:
+ 239               		.section	.text.startup,"ax",@progbits
+ 241               	.global	main
+ 243               	main:
+ 305:km_boot_v02.c **** }
+ 306:km_boot_v02.c **** 
+ 307:km_boot_v02.c **** static void (*jump_to_app)(void) = 0x0000;
+ 308:km_boot_v02.c **** 
+ 309:km_boot_v02.c **** int main(void)
+ 310:km_boot_v02.c **** {
+ 245               	.LM20:
+ 246               	.LFBB5:
+ 248               	.LM21:
+ 249 0000 CF93      		push r28
+ 250 0002 DF93      		push r29
+ 251 0004 1F92      		push __zero_reg__
+ 252 0006 CDB7      		in r28,__SP_L__
+ 253 0008 DEB7      		in r29,__SP_H__
+ 254               	/* prologue: function */
+ 255               	/* frame size = 1 */
+ 256               	/* stack size = 3 */
+ 257               	.L__stack_usage = 3
+ 311:km_boot_v02.c **** 	uint16_t address = 0;
+ 312:km_boot_v02.c **** 	uint8_t device = 0, val;
+ 313:km_boot_v02.c **** 
+ 314:km_boot_v02.c **** 
+ 315:km_boot_v02.c **** 	BIPORT |= (1<<BIPNUM);	// светодиод включить - LED ON (1)
+ 259               	.LM22:
+ 260 000a 2B9A      		sbi 0x5,3
+ 316:km_boot_v02.c **** 	BIDDR  |= (1<<BIPNUM);
+ 262               	.LM23:
+ 263 000c 239A      		sbi 0x4,3
+ 264               	.LBB29:
+ 265               	.LBB30:
+ 267               	.Ltext3:
+   1:km_boot_v02.h **** /************************************************************************
+   2:km_boot_v02.h **** * Заголовок для boot_v2_km.c
+   3:km_boot_v02.h **** * Здесь определяю то что необходимо для компиляции проекта
+   4:km_boot_v02.h **** *
+   5:km_boot_v02.h **** ************************************************************************/
+   6:km_boot_v02.h **** #ifndef BOOT_V2_H
+   7:km_boot_v02.h **** #define BOOT_V2_H
+   8:km_boot_v02.h **** 
+   9:km_boot_v02.h **** // Основные определения типа контроллера
+  10:km_boot_v02.h **** 
+  11:km_boot_v02.h **** #include <avr/io.h>
+  12:km_boot_v02.h **** 
+  13:km_boot_v02.h **** #if defined (SPMCSR)
+  14:km_boot_v02.h **** #define SPM_REG SPMCSR
+  15:km_boot_v02.h **** #elif defined (SPMCR)
+  16:km_boot_v02.h **** #define SPM_REG SPMCR
+  17:km_boot_v02.h **** #else
+  18:km_boot_v02.h **** #error "AVR processor does not provide bootloader support!"
+  19:km_boot_v02.h **** #endif
+  20:km_boot_v02.h **** 
+  21:km_boot_v02.h **** #define APP_END (FLASHEND - (BOOTSIZE * 2))
+  22:km_boot_v02.h **** 
+  23:km_boot_v02.h **** #if (SPM_PAGESIZE > UINT8_MAX)
+  24:km_boot_v02.h **** typedef uint16_t pagebuf_t;
+  25:km_boot_v02.h **** #else
+  26:km_boot_v02.h **** typedef uint8_t pagebuf_t;
+  27:km_boot_v02.h **** #endif
+  28:km_boot_v02.h **** 
+  29:km_boot_v02.h **** /* Определения для ATmega 324P Part-Code
+  30:km_boot_v02.h ****   I (M. Thomas) could not find an official Boot-ID 
+  31:km_boot_v02.h ****    for the ATmega324P so pretend it's an ATmega32 */
+  32:km_boot_v02.h **** /* Part-Code ISP */
+  33:km_boot_v02.h **** #define DEVTYPE_ISP     0x72
+  34:km_boot_v02.h **** /* Part-Code Boot */
+  35:km_boot_v02.h **** #define DEVTYPE_BOOT    0x73
+  36:km_boot_v02.h **** 
+  37:km_boot_v02.h **** #define SIG_BYTE1	0x1E
+  38:km_boot_v02.h **** #define SIG_BYTE2	0x95
+  39:km_boot_v02.h **** #define SIG_BYTE3	0x08
+  40:km_boot_v02.h **** //--------------------------------------------------
+  41:km_boot_v02.h **** // Определения для работы с UART0 (используем только его для заливки программ)
+  42:km_boot_v02.h **** /* UART 0 */
+  43:km_boot_v02.h **** #define UART_BAUD_HIGH	UBRR0H
+  44:km_boot_v02.h **** #define UART_BAUD_LOW	UBRR0L
+  45:km_boot_v02.h **** #define UART_STATUS	    UCSR0A
+  46:km_boot_v02.h **** #define UART_TXREADY	UDRE0
+  47:km_boot_v02.h **** #define UART_RXREADY	RXC0
+  48:km_boot_v02.h **** #define UART_DOUBLE	    U2X0
+  49:km_boot_v02.h **** #define UART_CTRL	    UCSR0B
+  50:km_boot_v02.h **** #define UART_CTRL_DATA	((1<<TXEN0) | (1<<RXEN0))
+  51:km_boot_v02.h **** #define UART_CTRL2	    UCSR0C
+  52:km_boot_v02.h **** #define UART_CTRL2_DATA	( (1<<UCSZ01) | (1<<UCSZ00))
+  53:km_boot_v02.h **** #define UART_DATA	    UDR0
+  54:km_boot_v02.h **** 
+  55:km_boot_v02.h **** #define WDT_OFF_SPECIAL
+  56:km_boot_v02.h **** 
+  57:km_boot_v02.h **** static inline void bootloader_wdt_off(void)
+  58:km_boot_v02.h **** {
+  59:km_boot_v02.h **** 	cli();
+ 269               	.LM24:
+ 270               	/* #APP */
+ 271               	 ;  59 "km_boot_v02.h" 1
+ 272 000e F894      		cli
+ 273               	 ;  0 "" 2
+  60:km_boot_v02.h **** 	wdt_reset();
+ 275               	.LM25:
+ 276               	 ;  60 "km_boot_v02.h" 1
+ 277 0010 A895      		wdr
+ 278               	 ;  0 "" 2
+  61:km_boot_v02.h **** 	/* Clear WDRF in MCUSR */
+  62:km_boot_v02.h **** 	MCUSR &= ~(1<<WDRF);
+ 280               	.LM26:
+ 281               	/* #NOAPP */
+ 282 0012 84B7      		in r24,0x34
+ 283 0014 877F      		andi r24,lo8(-9)
+ 284 0016 84BF      		out 0x34,r24
+  63:km_boot_v02.h **** 	/* Write logical one to WDCE and WDE */
+  64:km_boot_v02.h **** 	/* Keep old prescaler setting to prevent unintentional time-out */
+  65:km_boot_v02.h **** 	WDTCSR |= (1<<WDCE) | (1<<WDE);
+ 286               	.LM27:
+ 287 0018 8091 6000 		lds r24,96
+ 288 001c 8861      		ori r24,lo8(24)
+ 289 001e 8093 6000 		sts 96,r24
+  66:km_boot_v02.h **** 	/* Turn off WDT */
+  67:km_boot_v02.h **** 	WDTCSR = 0x00;
+ 291               	.LM28:
+ 292 0022 1092 6000 		sts 96,__zero_reg__
+ 293               	.LBE30:
+ 294               	.LBE29:
+ 296               	.Ltext4:
+ 317:km_boot_v02.c **** 
+ 318:km_boot_v02.c **** #ifdef DISABLE_WDT_AT_STARTUP // если надо Выключить Собачий таймер на время загрузчика
+ 319:km_boot_v02.c **** 	#ifdef WDT_OFF_SPECIAL
+ 320:km_boot_v02.c **** 		#warning "using target specific watchdog_off"
+ 321:km_boot_v02.c **** 		bootloader_wdt_off();
+ 322:km_boot_v02.c **** 	#else
+ 323:km_boot_v02.c **** 		cli();
+ 324:km_boot_v02.c **** 		wdt_reset();
+ 325:km_boot_v02.c **** 		wdt_disable(); // Выключить таймер
+ 326:km_boot_v02.c **** 	#endif
+ 327:km_boot_v02.c **** #endif
+ 328:km_boot_v02.c **** 	
+ 329:km_boot_v02.c **** 		// Выполнять всегда при запуске
+ 330:km_boot_v02.c **** #ifdef START_SIMPLE
+ 331:km_boot_v02.c **** 	BLDDR  &= ~(1<<BLPNUM);	// Установить вывод кнопки как вход (если загрузчик запускается от джампер
+ 332:km_boot_v02.c **** 	BLPORT |= (1<<BLPNUM);		// Подтянуть вход к +
+ 333:km_boot_v02.c **** #endif
+ 334:km_boot_v02.c **** 	// Настроить вывод управления TXE для RS485
+ 335:km_boot_v02.c **** 	RSPORT &= ~(1<<RSPNUM); 	// на выходе установить 0 (TXE - не активно)
+ 298               	.LM29:
+ 299 0026 5A98      		cbi 0xb,2
+ 336:km_boot_v02.c **** 	RSDDR |= (1<<RSPNUM);		// вывод как выход	
+ 301               	.LM30:
+ 302 0028 529A      		sbi 0xa,2
+ 337:km_boot_v02.c **** 	// Установить скорость порта UART
+ 338:km_boot_v02.c **** 	UART_BAUD_HIGH = (UART_CALC_BAUDRATE(BAUDRATE)>>8) & 0xFF;
+ 304               	.LM31:
+ 305 002a 1092 C500 		sts 197,__zero_reg__
+ 339:km_boot_v02.c **** 	UART_BAUD_LOW = (UART_CALC_BAUDRATE(BAUDRATE) & 0xFF);
+ 307               	.LM32:
+ 308 002e 8FE2      		ldi r24,lo8(47)
+ 309 0030 8093 C400 		sts 196,r24
+ 340:km_boot_v02.c **** 
+ 341:km_boot_v02.c **** 	UART_CTRL = UART_CTRL_DATA;		// Включить RX, TX
+ 311               	.LM33:
+ 312 0034 88E1      		ldi r24,lo8(24)
+ 313 0036 8093 C100 		sts 193,r24
+ 342:km_boot_v02.c **** 	UART_CTRL2 = UART_CTRL2_DATA;	// настроить параметры обмена 8,n,1
+ 315               	.LM34:
+ 316 003a 86E0      		ldi r24,lo8(6)
+ 317 003c 8093 C200 		sts 194,r24
+ 318 0040 E12C      		mov r14,__zero_reg__
+ 319 0042 F12C      		mov r15,__zero_reg__
+ 343:km_boot_v02.c **** 	
+ 344:km_boot_v02.c **** 
+ 345:km_boot_v02.c **** #if defined(START_SIMPLE) // Если работа от джампера !!!!!!!!!!!!!!!!!!!!!!! (мой случай)
+ 346:km_boot_v02.c **** 
+ 347:km_boot_v02.c **** 	if ((BLPIN & (1<<BLPNUM))) {
+ 348:km_boot_v02.c **** 		// Перейти к основному приложению если на входе кнопки не 0
+ 349:km_boot_v02.c **** 		BLPORT &= ~(1<<BLPNUM);	// Установить по умолчанию (не обязательно)
+ 350:km_boot_v02.c **** 
+ 351:km_boot_v02.c **** 		BIPORT &= ~(1<<BIPNUM);	// Выключить светодиод и установить вывод по умолчанию
+ 352:km_boot_v02.c **** 		BIDDR  &= ~(1<<BIPNUM);
+ 353:km_boot_v02.c **** 
+ 354:km_boot_v02.c **** 		RSPORT &= ~(1<<RSPNUM);	// Вывод TXE как вход, по умолчанию
+ 355:km_boot_v02.c **** 		RSDDR  &= ~(1<<RSPNUM);	
+ 356:km_boot_v02.c **** 
+ 357:km_boot_v02.c **** 		jump_to_app();				// Перейти в секцию приложения
+ 358:km_boot_v02.c **** 	}
+ 359:km_boot_v02.c **** 
+ 360:km_boot_v02.c **** #elif defined(START_WAIT)	// Если работа по времени!!!!!!!!!!!!!!!!!!!!!! (мой случай)
+ 361:km_boot_v02.c **** 
+ 362:km_boot_v02.c **** 	uint16_t cnt = 0;
+ 363:km_boot_v02.c **** 
+ 364:km_boot_v02.c **** 	while (1) {
+ 365:km_boot_v02.c **** 		if (UART_STATUS & (1<<UART_RXREADY))
+ 366:km_boot_v02.c **** 			if (UART_DATA == START_WAIT_UARTCHAR)
+ 367:km_boot_v02.c **** 				break;
+ 368:km_boot_v02.c **** 
+ 369:km_boot_v02.c **** 		if (cnt++ >= WAIT_VALUE) {		// Если время ожидания вышло!
+ 370:km_boot_v02.c **** 			BLPORT &= ~(1<<BLPNUM);	// установить все по умолчанию
+ 371:km_boot_v02.c **** 
+ 372:km_boot_v02.c **** 			BIPORT &= ~(1<<BIPNUM);	// Выключить светодиод и установить вывод по умолчанию
+ 373:km_boot_v02.c **** 			BIDDR  &= ~(1<<BIPNUM);
+ 374:km_boot_v02.c **** 
+ 375:km_boot_v02.c **** 			jump_to_app();			// Перейти в секцию приложения
+ 321               	.LM35:
+ 322 0044 00E0      		ldi r16,0
+ 323 0046 10E0      		ldi r17,0
+ 324               	.L14:
+ 365:km_boot_v02.c **** 			if (UART_DATA == START_WAIT_UARTCHAR)
+ 326               	.LM36:
+ 327 0048 8091 C000 		lds r24,192
+ 328 004c 87FF      		sbrs r24,7
+ 329 004e 00C0      		rjmp .L11
+ 366:km_boot_v02.c **** 				break;
+ 331               	.LM37:
+ 332 0050 8091 C600 		lds r24,198
+ 333 0054 8335      		cpi r24,lo8(83)
+ 334 0056 01F0      		breq .L12
+ 335               	.L11:
+ 369:km_boot_v02.c **** 			BLPORT &= ~(1<<BLPNUM);	// установить все по умолчанию
+ 337               	.LM38:
+ 338 0058 80E9      		ldi r24,-112
+ 339 005a E816      		cp r14,r24
+ 340 005c 81E0      		ldi r24,1
+ 341 005e F806      		cpc r15,r24
+ 342 0060 00F0      		brlo .L13
+ 370:km_boot_v02.c **** 
+ 344               	.LM39:
+ 345 0062 2E98      		cbi 0x5,6
+ 372:km_boot_v02.c **** 			BIDDR  &= ~(1<<BIPNUM);
+ 347               	.LM40:
+ 348 0064 2B98      		cbi 0x5,3
+ 373:km_boot_v02.c **** 
+ 350               	.LM41:
+ 351 0066 2398      		cbi 0x4,3
+ 353               	.LM42:
+ 354 0068 F801      		movw r30,r16
+ 355 006a 0995      		icall
+ 356               	.L13:
+ 357               	.LBB31:
+ 358               	.LBB32:
+ 360               	.Ltext5:
+ 163:c:\program files (x86)\atmel\atmel toolchain\avr8 gcc\native\3.4.1056\avr8-gnu-toolchain\avr\include\util\delay.h **** 
+ 362               	.LM43:
+ 363 006c 8FEF      		ldi r24,lo8(-28673)
+ 364 006e 9FE8      		ldi r25,hi8(-28673)
+ 365 0070 0197      		1: sbiw r24,1
+ 366 0072 01F4      		brne 1b
+ 367 0074 00C0      		rjmp .
+ 368 0076 0000      		nop
+ 369 0078 9FEF      		ldi r25,-1
+ 370 007a E91A      		sub r14,r25
+ 371 007c F90A      		sbc r15,r25
+ 372 007e 00C0      		rjmp .L14
+ 373               	.L12:
+ 374               	.LBE32:
+ 375               	.LBE31:
+ 377               	.Ltext6:
+ 376:km_boot_v02.c **** 		}
+ 377:km_boot_v02.c **** 
+ 378:km_boot_v02.c **** 		_delay_ms(10);					// задержка для счетчика (400Х10мсек = 4 сек - ожидания после старта для входа
+ 379:km_boot_v02.c **** 	}
+ 380:km_boot_v02.c **** 	send_boot(); // Передать приглашение (если конечно надо)
+ 379               	.LM44:
+ 380 0080 0E94 0000 		call send_boot
+ 312:km_boot_v02.c **** 
+ 382               	.LM45:
+ 383 0084 812C      		mov r8,__zero_reg__
+ 311:km_boot_v02.c **** 	uint8_t device = 0, val;
+ 385               	.LM46:
+ 386 0086 C12C      		mov r12,__zero_reg__
+ 387 0088 D12C      		mov r13,__zero_reg__
+ 381:km_boot_v02.c **** 
+ 382:km_boot_v02.c **** // Предупреждение, если ни один из типов boot не выбран!
+ 383:km_boot_v02.c **** #elif defined(START_BOOTICE)
+ 384:km_boot_v02.c **** #warning "BOOTICE mode - no startup-condition"
+ 385:km_boot_v02.c **** 
+ 386:km_boot_v02.c **** #else
+ 387:km_boot_v02.c **** #error "Select START_ condition for bootloader in main.c"
+ 388:km_boot_v02.c **** #endif
+ 389:km_boot_v02.c **** 
+ 390:km_boot_v02.c **** 	for(;;)  // --- Работа загрузчика ---
+ 391:km_boot_v02.c **** 	{
+ 392:km_boot_v02.c **** 		val = recvchar();
+ 393:km_boot_v02.c **** 		// если запрос - Autoincrement поддерживается?
+ 394:km_boot_v02.c **** 		if (val == 'a') 
+ 395:km_boot_v02.c **** 		{
+ 396:km_boot_v02.c **** 			sendchar('Y');			// ответ - да, быстрый Autoincrement
+ 397:km_boot_v02.c **** 
+ 398:km_boot_v02.c **** 		// если запрос - запись адреса
+ 399:km_boot_v02.c **** 		} 
+ 400:km_boot_v02.c **** 		else if (val == 'A') 
+ 401:km_boot_v02.c **** 		{
+ 402:km_boot_v02.c **** 			address = recvchar();		//чтение старших 8 MSB адреса
+ 403:km_boot_v02.c **** 			address = (address<<8) | recvchar();
+ 404:km_boot_v02.c **** 			sendchar('\r');
+ 405:km_boot_v02.c **** 
+ 406:km_boot_v02.c **** 		// если запрос - поддержка буфера загрузки
+ 407:km_boot_v02.c **** 		} 
+ 408:km_boot_v02.c **** 		else if (val == 'b') 
+ 409:km_boot_v02.c **** 		{
+ 410:km_boot_v02.c **** 			sendchar('Y');					// ответ буфера - загрузка поддерживается
+ 411:km_boot_v02.c **** 			sendchar((sizeof(gBuffer) >> 8) & 0xFF);	// ответ буфера - размер в байтах
+ 412:km_boot_v02.c **** 			sendchar(sizeof(gBuffer) & 0xFF);
+ 413:km_boot_v02.c **** 
+ 414:km_boot_v02.c **** 		// если запрос - Старт загрузки буфера
+ 415:km_boot_v02.c **** 		} 
+ 416:km_boot_v02.c **** 		else if (val == 'B') 
+ 417:km_boot_v02.c **** 		{
+ 418:km_boot_v02.c **** 			pagebuf_t size;
+ 419:km_boot_v02.c **** 			size = recvchar() << 8;			// загрузка старшего байта в buffersize
+ 420:km_boot_v02.c **** 			size |= recvchar();				// загрузка младшего байта в buffersize
+ 421:km_boot_v02.c **** 			val = recvchar();				// загрузка типа памяти ('E' или 'F')
+ 422:km_boot_v02.c **** 			recvBuffer(size);
+ 423:km_boot_v02.c **** 
+ 424:km_boot_v02.c **** 			if (device == DEVTYPE) 
+ 425:km_boot_v02.c **** 			{
+ 426:km_boot_v02.c **** 				if (val == 'F') 			// если это память flash
+ 427:km_boot_v02.c **** 				{
+ 428:km_boot_v02.c **** 				address = writeFlashPage(address, size);	// записать в Flash
+ 429:km_boot_v02.c **** 				} 
+ 430:km_boot_v02.c **** 				else if (val == 'E') 		// если это память eeprom
+ 431:km_boot_v02.c **** 				{
+ 432:km_boot_v02.c **** 				address = writeEEpromPage(address, size);	// записать в EEPROM
+ 433:km_boot_v02.c **** 				}
+ 434:km_boot_v02.c **** 				sendchar('\r');
+ 435:km_boot_v02.c **** 			} 
+ 436:km_boot_v02.c **** 			else 
+ 437:km_boot_v02.c **** 			{
+ 438:km_boot_v02.c **** 			sendchar(0);	// передать 0 байт
+ 439:km_boot_v02.c **** 			}
+ 440:km_boot_v02.c **** 
+ 441:km_boot_v02.c **** 		// если запрос - Чтение блока памяти
+ 442:km_boot_v02.c **** 		} 
+ 443:km_boot_v02.c **** 		else if (val == 'g') 
+ 444:km_boot_v02.c **** 		{
+ 445:km_boot_v02.c **** 			pagebuf_t size;
+ 446:km_boot_v02.c **** 			size = recvchar() << 8;			// загрузка старшего байта в buffersize
+ 447:km_boot_v02.c **** 			size |= recvchar();				// загрузка младшего байта в buffersize
+ 448:km_boot_v02.c **** 			val = recvchar();				// получить тип памяти ('E' или 'F')
+ 449:km_boot_v02.c **** 
+ 450:km_boot_v02.c **** 			if (val == 'F') 				// если это память flash
+ 451:km_boot_v02.c **** 			{
+ 452:km_boot_v02.c **** 			address = readFlashPage(address, size);		// читать из Flash
+ 453:km_boot_v02.c **** 			} 
+ 454:km_boot_v02.c **** 			else if (val == 'E') 			// если это память eeprom
+ 455:km_boot_v02.c **** 			{
+ 456:km_boot_v02.c **** 			address = readEEpromPage(address, size);	// читать из EEPROM
+ 457:km_boot_v02.c **** 			}
+ 458:km_boot_v02.c **** 
+ 459:km_boot_v02.c **** 		// если запрос - Стереть чип
+ 460:km_boot_v02.c ****  		} 
+ 461:km_boot_v02.c **** 		else if (val == 'e') 
+ 462:km_boot_v02.c **** 		{
+ 463:km_boot_v02.c **** 		if (device == DEVTYPE) 
+ 464:km_boot_v02.c **** 			{
+ 465:km_boot_v02.c **** 			eraseFlash(); 	// Стереть Flash (пользовательскую программу)
+ 466:km_boot_v02.c **** 			}
+ 467:km_boot_v02.c **** 		sendchar('\r');
+ 468:km_boot_v02.c **** 
+ 469:km_boot_v02.c **** 		// если запрос - выйти из обновления
+ 470:km_boot_v02.c **** 		} 
+ 471:km_boot_v02.c **** 		else if (val == 'E') 
+ 472:km_boot_v02.c **** 		{
+ 473:km_boot_v02.c **** 		wdt_enable(EXIT_WDT_TIME); // активировать собачий таймер для перехода к аппаратному сбросу
+ 389               	.LM47:
+ 390 008a 6CE0      		ldi r22,lo8(12)
+ 391 008c 362E      		mov r3,r22
+ 392               	.LBB33:
+ 393               	.LBB34:
+ 181:km_boot_v02.c **** 		boot_spm_busy_wait();		// Ждать конца стирания страницы.
+ 395               	.LM48:
+ 396 008e 73E0      		ldi r23,lo8(3)
+ 397 0090 672E      		mov r6,r23
+ 185:km_boot_v02.c **** }
+ 399               	.LM49:
+ 400 0092 E1E1      		ldi r30,lo8(17)
+ 401 0094 7E2E      		mov r7,r30
+ 402               	.LBE34:
+ 403               	.LBE33:
+ 404               	.LBB36:
+ 405               	.LBB37:
+ 406               	.LBB38:
+ 210:km_boot_v02.c **** 
+ 408               	.LM50:
+ 409 0096 5524      		clr r5
+ 410 0098 5394      		inc r5
+ 217:km_boot_v02.c **** 	boot_spm_busy_wait();
+ 412               	.LM51:
+ 413 009a F5E0      		ldi r31,lo8(5)
+ 414 009c 4F2E      		mov r4,r31
+ 415               	.L15:
+ 416               	.LBE38:
+ 417               	.LBE37:
+ 418               	.LBE36:
+ 392:km_boot_v02.c **** 		// если запрос - Autoincrement поддерживается?
+ 420               	.LM52:
+ 421 009e 0E94 0000 		call recvchar
+ 394:km_boot_v02.c **** 		{
+ 423               	.LM53:
+ 424 00a2 8136      		cpi r24,lo8(97)
+ 425 00a4 01F4      		brne .L16
+ 396:km_boot_v02.c **** 
+ 427               	.LM54:
+ 428 00a6 89E5      		ldi r24,lo8(89)
+ 429 00a8 00C0      		rjmp .L59
+ 430               	.L16:
+ 400:km_boot_v02.c **** 		{
+ 432               	.LM55:
+ 433 00aa 8134      		cpi r24,lo8(65)
+ 434 00ac 01F4      		brne .L18
+ 402:km_boot_v02.c **** 			address = (address<<8) | recvchar();
+ 436               	.LM56:
+ 437 00ae 0E94 0000 		call recvchar
+ 438 00b2 90E0      		ldi r25,0
+ 403:km_boot_v02.c **** 			sendchar('\r');
+ 440               	.LM57:
+ 441 00b4 D82E      		mov r13,r24
+ 442 00b6 CC24      		clr r12
+ 443 00b8 0E94 0000 		call recvchar
+ 444 00bc C82A      		or r12,r24
+ 445 00be 00C0      		rjmp .L60
+ 446               	.L18:
+ 408:km_boot_v02.c **** 		{
+ 448               	.LM58:
+ 449 00c0 8236      		cpi r24,lo8(98)
+ 450 00c2 01F4      		brne .L19
+ 410:km_boot_v02.c **** 			sendchar((sizeof(gBuffer) >> 8) & 0xFF);	// ответ буфера - размер в байтах
+ 452               	.LM59:
+ 453 00c4 89E5      		ldi r24,lo8(89)
+ 454 00c6 0E94 0000 		call sendchar
+ 411:km_boot_v02.c **** 			sendchar(sizeof(gBuffer) & 0xFF);
+ 456               	.LM60:
+ 457 00ca 80E0      		ldi r24,0
+ 458 00cc 0E94 0000 		call sendchar
+ 412:km_boot_v02.c **** 
+ 460               	.LM61:
+ 461 00d0 80E8      		ldi r24,lo8(-128)
+ 462 00d2 00C0      		rjmp .L59
+ 463               	.L19:
+ 416:km_boot_v02.c **** 		{
+ 465               	.LM62:
+ 466 00d4 8234      		cpi r24,lo8(66)
+ 467 00d6 01F0      		breq .+2
+ 468 00d8 00C0      		rjmp .L20
+ 469               	.LBB45:
+ 419:km_boot_v02.c **** 			size |= recvchar();				// загрузка младшего байта в buffersize
+ 471               	.LM63:
+ 472 00da 0E94 0000 		call recvchar
+ 420:km_boot_v02.c **** 			val = recvchar();				// загрузка типа памяти ('E' или 'F')
+ 474               	.LM64:
+ 475 00de 0E94 0000 		call recvchar
+ 476 00e2 982E      		mov r9,r24
+ 421:km_boot_v02.c **** 			recvBuffer(size);
+ 478               	.LM65:
+ 479 00e4 0E94 0000 		call recvchar
+ 480 00e8 982F      		mov r25,r24
+ 481 00ea 00E0      		ldi r16,lo8(gBuffer)
+ 482 00ec 10E0      		ldi r17,hi8(gBuffer)
+ 483               	.LBB40:
+ 484               	.LBB41:
+ 193:km_boot_v02.c **** 		{
+ 486               	.LM66:
+ 487 00ee B12C      		mov r11,__zero_reg__
+ 488               	.L21:
+ 195:km_boot_v02.c **** 		}
+ 490               	.LM67:
+ 491 00f0 B914      		cp r11,r9
+ 492 00f2 00F4      		brsh .L55
+ 493 00f4 9983      		std Y+1,r25
+ 494 00f6 0E94 0000 		call recvchar
+ 495 00fa 9981      		ldd r25,Y+1
+ 496 00fc 00C0      		rjmp .L22
+ 497               	.L55:
+ 498 00fe 8FEF      		ldi r24,lo8(-1)
+ 499               	.L22:
+ 500 0100 F801      		movw r30,r16
+ 501 0102 8193      		st Z+,r24
+ 502 0104 8F01      		movw r16,r30
+ 193:km_boot_v02.c **** 		{
+ 504               	.LM68:
+ 505 0106 B394      		inc r11
+ 506 0108 F0E8      		ldi r31,lo8(-128)
+ 507 010a BF12      		cpse r11,r31
+ 508 010c 00C0      		rjmp .L21
+ 509               	.LBE41:
+ 510               	.LBE40:
+ 424:km_boot_v02.c **** 			{
+ 512               	.LM69:
+ 513 010e 83E7      		ldi r24,lo8(115)
+ 514 0110 8812      		cpse r8,r24
+ 515 0112 00C0      		rjmp .L61
+ 426:km_boot_v02.c **** 				{
+ 517               	.LM70:
+ 518 0114 9634      		cpi r25,lo8(70)
+ 519 0116 01F0      		breq .+2
+ 520 0118 00C0      		rjmp .L25
+ 521               	.LBB42:
+ 522               	.LBB39:
+ 201:km_boot_v02.c **** 	uint32_t baddr = pagestart;
+ 524               	.LM71:
+ 525 011a 8601      		movw r16,r12
+ 526 011c 20E0      		ldi r18,0
+ 527 011e 30E0      		ldi r19,0
+ 528 0120 000F      		lsl r16
+ 529 0122 111F      		rol r17
+ 530 0124 221F      		rol r18
+ 531 0126 331F      		rol r19
+ 204:km_boot_v02.c **** 
+ 533               	.LM72:
+ 534 0128 A0E0      		ldi r26,lo8(gBuffer)
+ 535 012a B0E0      		ldi r27,hi8(gBuffer)
+ 536 012c 8091 0000 		lds r24,gBuffer
+ 202:km_boot_v02.c **** 	uint16_t data;
+ 538               	.LM73:
+ 539 0130 B901      		movw r22,r18
+ 540 0132 A801      		movw r20,r16
+ 541 0134 900E      		add r9,r16
+ 542               	.L27:
+ 209:km_boot_v02.c **** 		boot_page_fill(baddr, data);	// вызов asm подпрограммы.
+ 544               	.LM74:
+ 545 0136 1196      		adiw r26,1
+ 546 0138 EC91      		ld r30,X
+ 547 013a 1197      		sbiw r26,1
+ 548 013c 90E0      		ldi r25,0
+ 549 013e 9E2B      		or r25,r30
+ 210:km_boot_v02.c **** 
+ 551               	.LM75:
+ 552 0140 FA01      		movw r30,r20
+ 553               	/* #APP */
+ 554               	 ;  210 "km_boot_v02.c" 1
+ 555 0142 0C01      		movw  r0, r24
+ 556 0144 5092 5700 		sts 87, r5
+ 557 0148 E895      		spm
+ 558 014a 1124      		clr  r1
+ 559               		
+ 560               	 ;  0 "" 2
+ 212:km_boot_v02.c **** 		size -= 2;			// уменьшить указатель кол-ва байтов для записи
+ 562               	.LM76:
+ 563               	/* #NOAPP */
+ 564 014c 4E5F      		subi r20,-2
+ 565 014e 5F4F      		sbci r21,-1
+ 566 0150 6F4F      		sbci r22,-1
+ 567 0152 7F4F      		sbci r23,-1
+ 215:km_boot_v02.c **** 
+ 569               	.LM77:
+ 570 0154 9416      		cp r9,r20
+ 571 0156 01F0      		breq .L26
+ 209:km_boot_v02.c **** 		boot_page_fill(baddr, data);	// вызов asm подпрограммы.
+ 573               	.LM78:
+ 574 0158 1296      		adiw r26,2
+ 575 015a 8C91      		ld r24,X
+ 576 015c 1297      		sbiw r26,2
+ 577 015e 1296      		adiw r26,2
+ 578 0160 00C0      		rjmp .L27
+ 579               	.L26:
+ 217:km_boot_v02.c **** 	boot_spm_busy_wait();
+ 581               	.LM79:
+ 582 0162 F801      		movw r30,r16
+ 583               	/* #APP */
+ 584               	 ;  217 "km_boot_v02.c" 1
+ 585 0164 4092 5700 		sts 87, r4
+ 586 0168 E895      		spm
+ 587               		
+ 588               	 ;  0 "" 2
+ 589               	/* #NOAPP */
+ 590               	.L29:
+ 218:km_boot_v02.c **** 	boot_rww_enable();		// перейти в RWW секцию
+ 592               	.LM80:
+ 593 016a 07B6      		in __tmp_reg__,0x37
+ 594 016c 00FC      		sbrc __tmp_reg__,0
+ 595 016e 00C0      		rjmp .L29
+ 219:km_boot_v02.c **** 
+ 597               	.LM81:
+ 598               	/* #APP */
+ 599               	 ;  219 "km_boot_v02.c" 1
+ 600 0170 7092 5700 		sts 87, r7
+ 601 0174 E895      		spm
+ 602               		
+ 603               	 ;  0 "" 2
+ 221:km_boot_v02.c **** }
+ 605               	.LM82:
+ 606               	/* #NOAPP */
+ 607 0176 7695      		lsr r23
+ 608 0178 6795      		ror r22
+ 609 017a 5795      		ror r21
+ 610 017c 4795      		ror r20
+ 611 017e 6A01      		movw r12,r20
+ 612               	.LBE39:
+ 613               	.LBE42:
+ 614 0180 00C0      		rjmp .L60
+ 615               	.L25:
+ 430:km_boot_v02.c **** 				{
+ 617               	.LM83:
+ 618 0182 9534      		cpi r25,lo8(69)
+ 619 0184 01F0      		breq .+2
+ 620 0186 00C0      		rjmp .L60
+ 621 0188 00E0      		ldi r16,lo8(gBuffer)
+ 622 018a 10E0      		ldi r17,hi8(gBuffer)
+ 623 018c C601      		movw r24,r12
+ 624 018e 8050      		subi r24,lo8(gBuffer)
+ 625 0190 9040      		sbci r25,hi8(gBuffer)
+ 626 0192 5C01      		movw r10,r24
+ 627 0194 F801      		movw r30,r16
+ 628 0196 E90D      		add r30,r9
+ 629 0198 2E2E      		mov r2,r30
+ 630               	.L32:
+ 631 019a C501      		movw r24,r10
+ 632 019c 800F      		add r24,r16
+ 633 019e 911F      		adc r25,r17
+ 634               	.LBB43:
+ 635               	.LBB44:
+ 230:km_boot_v02.c **** 		address++;			// выбрать следующий байт
+ 637               	.LM84:
+ 638 01a0 F801      		movw r30,r16
+ 639 01a2 6191      		ld r22,Z+
+ 640 01a4 8F01      		movw r16,r30
+ 641 01a6 0E94 0000 		call __eewr_byte_m324p
+ 234:km_boot_v02.c **** 
+ 643               	.LM85:
+ 644 01aa 2012      		cpse r2,r16
+ 645 01ac 00C0      		rjmp .L32
+ 646 01ae FFEF      		ldi r31,-1
+ 647 01b0 CF1A      		sub r12,r31
+ 648 01b2 DF0A      		sbc r13,r31
+ 649 01b4 9A94      		dec r9
+ 650 01b6 C90C      		add r12,r9
+ 651 01b8 D11C      		adc r13,__zero_reg__
+ 652 01ba 00C0      		rjmp .L60
+ 653               	.L20:
+ 654               	.LBE44:
+ 655               	.LBE43:
+ 656               	.LBE45:
+ 443:km_boot_v02.c **** 		{
+ 658               	.LM86:
+ 659 01bc 8736      		cpi r24,lo8(103)
+ 660 01be 01F0      		breq .+2
+ 661 01c0 00C0      		rjmp .L33
+ 662               	.LBB46:
+ 446:km_boot_v02.c **** 			size |= recvchar();				// загрузка младшего байта в buffersize
+ 664               	.LM87:
+ 665 01c2 0E94 0000 		call recvchar
+ 447:km_boot_v02.c **** 			val = recvchar();				// получить тип памяти ('E' или 'F')
+ 667               	.LM88:
+ 668 01c6 0E94 0000 		call recvchar
+ 669 01ca B82E      		mov r11,r24
+ 448:km_boot_v02.c **** 
+ 671               	.LM89:
+ 672 01cc 0E94 0000 		call recvchar
+ 450:km_boot_v02.c **** 			{
+ 674               	.LM90:
+ 675 01d0 8634      		cpi r24,lo8(70)
+ 676 01d2 01F4      		brne .L34
+ 677               	.LBB47:
+ 678               	.LBB48:
+ 243:km_boot_v02.c **** 	uint16_t data;
+ 680               	.LM91:
+ 681 01d4 E12C      		mov r14,__zero_reg__
+ 682 01d6 F12C      		mov r15,__zero_reg__
+ 683 01d8 CC0C      		lsl r12
+ 684 01da DD1C      		rol r13
+ 685 01dc EE1C      		rol r14
+ 686 01de FF1C      		rol r15
+ 687 01e0 BC0C      		add r11,r12
+ 688               	.L36:
+ 689               	.LBB49:
+ 255:km_boot_v02.c **** 	#endif
+ 691               	.LM92:
+ 692 01e2 F601      		movw r30,r12
+ 693               	/* #APP */
+ 694               	 ;  255 "km_boot_v02.c" 1
+ 695 01e4 0591      		lpm r16, Z+
+ 696 01e6 1491      		lpm r17, Z
+ 697               		
+ 698               	 ;  0 "" 2
+ 699               	/* #NOAPP */
+ 700               	.LBE49:
+ 273:km_boot_v02.c **** 		sendchar((data >> 8));		// передать старший байт MSB
+ 702               	.LM93:
+ 703 01e8 802F      		mov r24,r16
+ 704 01ea 0E94 0000 		call sendchar
+ 274:km_boot_v02.c **** 		baddr += 2;					// выбрать следующее слово в памяти (2 байта)
+ 706               	.LM94:
+ 707 01ee 812F      		mov r24,r17
+ 708 01f0 0E94 0000 		call sendchar
+ 275:km_boot_v02.c **** 		size -= 2;					// вычесть два байта из общего числа читаемых байт
+ 710               	.LM95:
+ 711 01f4 82E0      		ldi r24,2
+ 712 01f6 C80E      		add r12,r24
+ 713 01f8 D11C      		adc r13,__zero_reg__
+ 714 01fa E11C      		adc r14,__zero_reg__
+ 715 01fc F11C      		adc r15,__zero_reg__
+ 278:km_boot_v02.c **** 	return baddr>>1;
+ 717               	.LM96:
+ 718 01fe BC10      		cpse r11,r12
+ 719 0200 00C0      		rjmp .L36
+ 279:km_boot_v02.c **** }
+ 721               	.LM97:
+ 722 0202 B701      		movw r22,r14
+ 723 0204 A601      		movw r20,r12
+ 724 0206 7695      		lsr r23
+ 725 0208 6795      		ror r22
+ 726 020a 5795      		ror r21
+ 727 020c 4795      		ror r20
+ 728 020e 6A01      		movw r12,r20
+ 729               	.LBE48:
+ 730               	.LBE47:
+ 731 0210 00C0      		rjmp .L15
+ 732               	.L34:
+ 454:km_boot_v02.c **** 			{
+ 734               	.LM98:
+ 735 0212 8534      		cpi r24,lo8(69)
+ 736 0214 01F0      		breq .+2
+ 737 0216 00C0      		rjmp .L15
+ 738 0218 8601      		movw r16,r12
+ 739 021a AC2C      		mov r10,r12
+ 740 021c AB0C      		add r10,r11
+ 741               	.L38:
+ 742               	.LBB50:
+ 743               	.LBB51:
+ 286:km_boot_v02.c **** 	address++;
+ 745               	.LM99:
+ 746 021e C801      		movw r24,r16
+ 747 0220 0E94 0000 		call __eerd_byte_m324p
+ 748 0224 0E94 0000 		call sendchar
+ 287:km_boot_v02.c **** 	size--;						// уменьшить кол-во считываемых байт
+ 750               	.LM100:
+ 751 0228 0F5F      		subi r16,-1
+ 752 022a 1F4F      		sbci r17,-1
+ 290:km_boot_v02.c **** 
+ 754               	.LM101:
+ 755 022c A012      		cpse r10,r16
+ 756 022e 00C0      		rjmp .L38
+ 757 0230 9FEF      		ldi r25,-1
+ 758 0232 C91A      		sub r12,r25
+ 759 0234 D90A      		sbc r13,r25
+ 760 0236 BA94      		dec r11
+ 761 0238 CB0C      		add r12,r11
+ 762 023a D11C      		adc r13,__zero_reg__
+ 763 023c 00C0      		rjmp .L15
+ 764               	.L33:
+ 765               	.LBE51:
+ 766               	.LBE50:
+ 767               	.LBE46:
+ 461:km_boot_v02.c **** 		{
+ 769               	.LM102:
+ 770 023e 8536      		cpi r24,lo8(101)
+ 771 0240 01F4      		brne .L39
+ 463:km_boot_v02.c **** 			{
+ 773               	.LM103:
+ 774 0242 E3E7      		ldi r30,lo8(115)
+ 775 0244 8E12      		cpse r8,r30
+ 776 0246 00C0      		rjmp .L60
+ 777 0248 E0E0      		ldi r30,0
+ 778 024a F0E0      		ldi r31,0
+ 779               	.L44:
+ 780               	.LBB52:
+ 781               	.LBB35:
+ 181:km_boot_v02.c **** 		boot_spm_busy_wait();		// Ждать конца стирания страницы.
+ 783               	.LM104:
+ 784               	/* #APP */
+ 785               	 ;  181 "km_boot_v02.c" 1
+ 786 024c 6092 5700 		sts 87, r6
+ 787 0250 E895      		spm
+ 788               		
+ 789               	 ;  0 "" 2
+ 790               	/* #NOAPP */
+ 791               	.L42:
+ 182:km_boot_v02.c **** 		addr += SPM_PAGESIZE;		// перейти к следующей странице
+ 793               	.LM105:
+ 794 0252 07B6      		in __tmp_reg__,0x37
+ 795 0254 00FC      		sbrc __tmp_reg__,0
+ 796 0256 00C0      		rjmp .L42
+ 797 0258 E058      		subi r30,-128
+ 798 025a FF4F      		sbci r31,-1
+ 179:km_boot_v02.c **** 		{
+ 800               	.LM106:
+ 801 025c E115      		cp r30,__zero_reg__
+ 802 025e 8CE7      		ldi r24,124
+ 803 0260 F807      		cpc r31,r24
+ 804 0262 01F4      		brne .L44
+ 185:km_boot_v02.c **** }
+ 806               	.LM107:
+ 807               	/* #APP */
+ 808               	 ;  185 "km_boot_v02.c" 1
+ 809 0264 7092 5700 		sts 87, r7
+ 810 0268 E895      		spm
+ 811               		
+ 812               	 ;  0 "" 2
+ 813               	/* #NOAPP */
+ 814 026a 00C0      		rjmp .L60
+ 815               	.L39:
+ 816               	.LBE35:
+ 817               	.LBE52:
+ 471:km_boot_v02.c **** 		{
+ 819               	.LM108:
+ 820 026c 8534      		cpi r24,lo8(69)
+ 821 026e 01F4      		brne .L45
+ 823               	.LM109:
+ 824 0270 E8E1      		ldi r30,lo8(24)
+ 825 0272 F0E0      		ldi r31,0
+ 826               	/* #APP */
+ 827               	 ;  473 "km_boot_v02.c" 1
+ 828 0274 0FB6      		in __tmp_reg__,__SREG__
+ 829 0276 F894      		cli
+ 830 0278 A895      		wdr
+ 831 027a E093 6000 		sts 96,r30
+ 832 027e 0FBE      		out __SREG__,__tmp_reg__
+ 833 0280 3092 6000 		sts 96,r3
+ 834               		
+ 835               	 ;  0 "" 2
+ 836               	/* #NOAPP */
+ 837 0284 00C0      		rjmp .L60
+ 838               	.L45:
+ 474:km_boot_v02.c **** 		sendchar('\r');				// передать символ
+ 475:km_boot_v02.c **** 
+ 476:km_boot_v02.c **** 		//если запрос - Войти в режим программирования
+ 477:km_boot_v02.c **** 		} 
+ 478:km_boot_v02.c **** 		else if (val == 'P') 
+ 840               	.LM110:
+ 841 0286 8035      		cpi r24,lo8(80)
+ 842 0288 01F0      		breq .L60
+ 479:km_boot_v02.c **** 		{
+ 480:km_boot_v02.c **** 		sendchar('\r');
+ 481:km_boot_v02.c **** 
+ 482:km_boot_v02.c **** 		//если запрос - выйти из режима программирования
+ 483:km_boot_v02.c **** 		} 
+ 484:km_boot_v02.c **** 		else if (val == 'L') 
+ 844               	.LM111:
+ 845 028a 8C34      		cpi r24,lo8(76)
+ 846 028c 01F0      		breq .L60
+ 485:km_boot_v02.c **** 		{
+ 486:km_boot_v02.c **** 		sendchar('\r');
+ 487:km_boot_v02.c **** 		//если запрос - типа программатора
+ 488:km_boot_v02.c **** 		} 
+ 489:km_boot_v02.c **** 		else if (val == 'p') 
+ 848               	.LM112:
+ 849 028e 8037      		cpi r24,lo8(112)
+ 850 0290 01F4      		brne .L48
+ 490:km_boot_v02.c **** 		{
+ 491:km_boot_v02.c **** 		sendchar('S');		// всегда - serial программатор
+ 852               	.LM113:
+ 853 0292 83E5      		ldi r24,lo8(83)
+ 854 0294 00C0      		rjmp .L59
+ 855               	.L48:
+ 492:km_boot_v02.c **** 
+ 493:km_boot_v02.c **** 		//если запрос - тип устройства
+ 494:km_boot_v02.c **** 		} 
+ 495:km_boot_v02.c **** 		else if (val == 't') 
+ 857               	.LM114:
+ 858 0296 8437      		cpi r24,lo8(116)
+ 859 0298 01F4      		brne .L49
+ 496:km_boot_v02.c **** 		{
+ 497:km_boot_v02.c **** 		sendchar(DEVTYPE);		// передать тип уст-ва (Part-Code Boot (0x73))
+ 861               	.LM115:
+ 862 029a 83E7      		ldi r24,lo8(115)
+ 863 029c 0E94 0000 		call sendchar
+ 864               	.L61:
+ 498:km_boot_v02.c **** 		sendchar(0);
+ 866               	.LM116:
+ 867 02a0 80E0      		ldi r24,0
+ 868 02a2 00C0      		rjmp .L59
+ 869               	.L49:
+ 499:km_boot_v02.c **** 		// clear and set LED ignored
+ 500:km_boot_v02.c **** 		} 
+ 501:km_boot_v02.c **** 		else if ((val == 'x') || (val == 'y')) 
+ 871               	.LM117:
+ 872 02a4 98E8      		ldi r25,lo8(-120)
+ 873 02a6 980F      		add r25,r24
+ 874 02a8 9230      		cpi r25,lo8(2)
+ 875 02aa 00F4      		brsh .L50
+ 502:km_boot_v02.c **** 		{
+ 503:km_boot_v02.c **** 		recvchar();
+ 877               	.LM118:
+ 878 02ac 0E94 0000 		call recvchar
+ 879 02b0 00C0      		rjmp .L60
+ 880               	.L50:
+ 504:km_boot_v02.c **** 		sendchar('\r');
+ 505:km_boot_v02.c **** 
+ 506:km_boot_v02.c **** 		// set device
+ 507:km_boot_v02.c **** 		} 
+ 508:km_boot_v02.c **** 		else if (val == 'T') 
+ 882               	.LM119:
+ 883 02b2 8435      		cpi r24,lo8(84)
+ 884 02b4 01F4      		brne .L51
+ 509:km_boot_v02.c **** 		{
+ 510:km_boot_v02.c **** 		device = recvchar();
+ 886               	.LM120:
+ 887 02b6 0E94 0000 		call recvchar
+ 888 02ba 882E      		mov r8,r24
+ 889               	.L60:
+ 511:km_boot_v02.c **** 		sendchar('\r');
+ 891               	.LM121:
+ 892 02bc 8DE0      		ldi r24,lo8(13)
+ 893 02be 00C0      		rjmp .L59
+ 894               	.L51:
+ 512:km_boot_v02.c **** 		// если запрос - вернуть software identifier
+ 513:km_boot_v02.c **** 		} 
+ 514:km_boot_v02.c **** 		else if (val == 'S') 
+ 896               	.LM122:
+ 897 02c0 8335      		cpi r24,lo8(83)
+ 898 02c2 01F4      		brne .L52
+ 515:km_boot_v02.c **** 		{
+ 516:km_boot_v02.c **** 		send_boot();
+ 900               	.LM123:
+ 901 02c4 0E94 0000 		call send_boot
+ 902 02c8 00C0      		rjmp .L15
+ 903               	.L52:
+ 517:km_boot_v02.c **** 
+ 518:km_boot_v02.c **** 		//если запрос - Software Version
+ 519:km_boot_v02.c **** 		} 
+ 520:km_boot_v02.c **** 		else if (val == 'V') {
+ 905               	.LM124:
+ 906 02ca 8635      		cpi r24,lo8(86)
+ 907 02cc 01F4      		brne .L53
+ 521:km_boot_v02.c **** 		sendchar(VERSION_HIGH);
+ 909               	.LM125:
+ 910 02ce 80E3      		ldi r24,lo8(48)
+ 911 02d0 0E94 0000 		call sendchar
+ 522:km_boot_v02.c **** 		sendchar(VERSION_LOW);
+ 913               	.LM126:
+ 914 02d4 88E3      		ldi r24,lo8(56)
+ 915 02d6 00C0      		rjmp .L59
+ 916               	.L53:
+ 523:km_boot_v02.c **** 
+ 524:km_boot_v02.c **** 		// возвращаем несколько байт (т.к.
+ 525:km_boot_v02.c **** 		// AVRProg программа ожидает "Atmel-byte" 0x1E последним байтом
+ 526:km_boot_v02.c **** 		// эти байты показываются в диалоговом окне window приложения)
+ 527:km_boot_v02.c **** 		// В общем для совместимости!
+ 528:km_boot_v02.c **** 		} 
+ 529:km_boot_v02.c **** 		else if (val == 's') 
+ 918               	.LM127:
+ 919 02d8 8337      		cpi r24,lo8(115)
+ 920 02da 01F4      		brne .L54
+ 530:km_boot_v02.c **** 		{
+ 531:km_boot_v02.c **** 		sendchar(SIG_BYTE3);
+ 922               	.LM128:
+ 923 02dc 88E0      		ldi r24,lo8(8)
+ 924 02de 0E94 0000 		call sendchar
+ 532:km_boot_v02.c **** 		sendchar(SIG_BYTE2);
+ 926               	.LM129:
+ 927 02e2 85E9      		ldi r24,lo8(-107)
+ 928 02e4 0E94 0000 		call sendchar
+ 533:km_boot_v02.c **** 		sendchar(SIG_BYTE1);
+ 930               	.LM130:
+ 931 02e8 8EE1      		ldi r24,lo8(30)
+ 932 02ea 00C0      		rjmp .L59
+ 933               	.L54:
+ 534:km_boot_v02.c **** 
+ 535:km_boot_v02.c **** 		/* ESC */
+ 536:km_boot_v02.c **** 		} 
+ 537:km_boot_v02.c **** 		else if(val != 0x1b) 
+ 935               	.LM131:
+ 936 02ec 8B31      		cpi r24,lo8(27)
+ 937 02ee 01F4      		brne .+2
+ 938 02f0 00C0      		rjmp .L15
+ 538:km_boot_v02.c **** 		{
+ 539:km_boot_v02.c **** 		sendchar('?');
+ 940               	.LM132:
+ 941 02f2 8FE3      		ldi r24,lo8(63)
+ 942               	.L59:
+ 943 02f4 0E94 0000 		call sendchar
+ 944 02f8 00C0      		rjmp .L15
+ 958               	.Lscope5:
+ 959               		.comm	gBuffer,128,1
+ 961               		.text
+ 963               	.Letext0:
+ 964               		.ident	"GCC: (AVR_8_bit_GNU_Toolchain_3.4.4_1229) 4.8.1"
+ 965               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:00000000 km_boot_v02.c
+C:\Users\Ed\AppData\Local\Temp\ccs52Q6h.s:2      *ABS*:0000003e __SP_H__
+C:\Users\Ed\AppData\Local\Temp\ccs52Q6h.s:3      *ABS*:0000003d __SP_L__
+C:\Users\Ed\AppData\Local\Temp\ccs52Q6h.s:4      *ABS*:0000003f __SREG__
+C:\Users\Ed\AppData\Local\Temp\ccs52Q6h.s:5      *ABS*:00000000 __tmp_reg__
+C:\Users\Ed\AppData\Local\Temp\ccs52Q6h.s:6      *ABS*:00000001 __zero_reg__
+C:\Users\Ed\AppData\Local\Temp\ccs52Q6h.s:115    .text:00000000 recvchar
+C:\Users\Ed\AppData\Local\Temp\ccs52Q6h.s:140    .text:0000000e sendchar
+C:\Users\Ed\AppData\Local\Temp\ccs52Q6h.s:187    .text:00000032 send_boot
+C:\Users\Ed\AppData\Local\Temp\ccs52Q6h.s:228    .text:0000005c __vector_default
+C:\Users\Ed\AppData\Local\Temp\ccs52Q6h.s:243    .text.startup:00000000 main
+                            *COM*:00000080 gBuffer
+
+UNDEFINED SYMBOLS
+__eewr_byte_m324p
+__eerd_byte_m324p
+__do_clear_bss

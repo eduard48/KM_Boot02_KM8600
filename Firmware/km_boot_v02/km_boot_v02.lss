@@ -1,0 +1,886 @@
+
+km_boot_v02.elf:     file format elf32-avr
+
+Sections:
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .text         000003b0  00007c00  00007c00  00000074  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  1 .trampolines  00000000  00007fb0  00007fb0  00000424  2**1
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  2 .bss          00000080  00800100  00007fb0  00000424  2**0
+                  ALLOC
+  3 .stab         00000c60  00000000  00000000  00000424  2**2
+                  CONTENTS, READONLY, DEBUGGING
+  4 .stabstr      00000ff5  00000000  00000000  00001084  2**0
+                  CONTENTS, READONLY, DEBUGGING
+  5 .comment      00000030  00000000  00000000  00002079  2**0
+                  CONTENTS, READONLY
+
+Disassembly of section .text:
+
+00007c00 <__ctors_end>:
+    7c00:	11 24       	eor	r1, r1
+    7c02:	1f be       	out	0x3f, r1	; 63
+    7c04:	cf ef       	ldi	r28, 0xFF	; 255
+    7c06:	d8 e0       	ldi	r29, 0x08	; 8
+    7c08:	de bf       	out	0x3e, r29	; 62
+    7c0a:	cd bf       	out	0x3d, r28	; 61
+
+00007c0c <__do_clear_bss>:
+    7c0c:	21 e0       	ldi	r18, 0x01	; 1
+    7c0e:	a0 e0       	ldi	r26, 0x00	; 0
+    7c10:	b1 e0       	ldi	r27, 0x01	; 1
+    7c12:	01 c0       	rjmp	.+2      	; 0x7c16 <.do_clear_bss_start>
+
+00007c14 <.do_clear_bss_loop>:
+    7c14:	1d 92       	st	X+, r1
+
+00007c16 <.do_clear_bss_start>:
+    7c16:	a0 38       	cpi	r26, 0x80	; 128
+    7c18:	b2 07       	cpc	r27, r18
+    7c1a:	e1 f7       	brne	.-8      	; 0x7c14 <.do_clear_bss_loop>
+    7c1c:	0e 94 43 3e 	call	0x7c86	; 0x7c86 <main>
+    7c20:	0c 94 d6 3f 	jmp	0x7fac	; 0x7fac <_exit>
+
+00007c24 <__bad_interrupt>:
+    7c24:	0c 94 42 3e 	jmp	0x7c84	; 0x7c84 <__vector_default>
+
+00007c28 <recvchar>:
+	RSPORT &= ~(1<<RSPNUM);						// 0 на выводе TXE
+}
+
+static uint8_t recvchar(void)
+{
+	while (!(UART_STATUS & (1<<UART_RXREADY))); 	// Ждать символ
+    7c28:	80 91 c0 00 	lds	r24, 0x00C0
+    7c2c:	87 ff       	sbrs	r24, 7
+    7c2e:	fc cf       	rjmp	.-8      	; 0x7c28 <recvchar>
+	return UART_DATA;								// Вернуться с принятым символом
+    7c30:	80 91 c6 00 	lds	r24, 0x00C6
+}
+    7c34:	08 95       	ret
+
+00007c36 <sendchar>:
+	void __vector_default(void) { ; }
+#endif
+
+static void sendchar(uint8_t data)
+{
+	RSPORT |= (1<<RSPNUM);							// 1 на выводе TXE
+    7c36:	5a 9a       	sbi	0x0b, 2	; 11
+	UART_DATA = data;								// передать байт в буфер
+    7c38:	80 93 c6 00 	sts	0x00C6, r24
+	while (!(UART_STATUS & (1<<UART_TXREADY))); 	// Ждать конца передачи
+    7c3c:	80 91 c0 00 	lds	r24, 0x00C0
+    7c40:	85 ff       	sbrs	r24, 5
+    7c42:	fc cf       	rjmp	.-8      	; 0x7c3c <sendchar+0x6>
+	UART_STATUS |= (1<<UART_TXREADY);				// Сбросить флаг т.к. нет прерываний
+    7c44:	80 91 c0 00 	lds	r24, 0x00C0
+    7c48:	80 62       	ori	r24, 0x20	; 32
+    7c4a:	80 93 c0 00 	sts	0x00C0, r24
+	#else
+		//round up by default
+		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+	#endif
+
+	__builtin_avr_delay_cycles(__ticks_dc);
+    7c4e:	83 e3       	ldi	r24, 0x33	; 51
+    7c50:	97 e0       	ldi	r25, 0x07	; 7
+    7c52:	01 97       	sbiw	r24, 0x01	; 1
+    7c54:	f1 f7       	brne	.-4      	; 0x7c52 <sendchar+0x1c>
+	_delay_us(500);									// Задержка для передачи последнего байта (по другому не работает!)
+	RSPORT &= ~(1<<RSPNUM);						// 0 на выводе TXE
+    7c56:	5a 98       	cbi	0x0b, 2	; 11
+    7c58:	08 95       	ret
+
+00007c5a <send_boot>:
+}
+
+
+static void send_boot(void)
+{
+	sendchar('A');
+    7c5a:	81 e4       	ldi	r24, 0x41	; 65
+    7c5c:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+	sendchar('V');
+    7c60:	86 e5       	ldi	r24, 0x56	; 86
+    7c62:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+	sendchar('R');
+    7c66:	82 e5       	ldi	r24, 0x52	; 82
+    7c68:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+	sendchar('B');
+    7c6c:	82 e4       	ldi	r24, 0x42	; 66
+    7c6e:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+	sendchar('O');
+    7c72:	8f e4       	ldi	r24, 0x4F	; 79
+    7c74:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+	sendchar('O');
+    7c78:	8f e4       	ldi	r24, 0x4F	; 79
+    7c7a:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+	sendchar('T');
+    7c7e:	84 e5       	ldi	r24, 0x54	; 84
+    7c80:	0c 94 1b 3e 	jmp	0x7c36	; 0x7c36 <sendchar>
+
+00007c84 <__vector_default>:
+
+#if defined(BOOTLOADERHASNOVECTORS)
+	#warning "This Bootloader does not link interrupt vectors - see makefile"
+	/* make the linker happy - it wants to see __vector_default */
+	// void __vector_default(void) { ; }
+	void __vector_default(void) { ; }
+    7c84:	08 95       	ret
+
+00007c86 <main>:
+}
+
+static void (*jump_to_app)(void) = 0x0000;
+
+int main(void)
+{
+    7c86:	cf 93       	push	r28
+    7c88:	df 93       	push	r29
+    7c8a:	1f 92       	push	r1
+    7c8c:	cd b7       	in	r28, 0x3d	; 61
+    7c8e:	de b7       	in	r29, 0x3e	; 62
+	uint16_t address = 0;
+	uint8_t device = 0, val;
+
+
+	BIPORT |= (1<<BIPNUM);	// светодиод включить - LED ON (1)
+    7c90:	2b 9a       	sbi	0x05, 3	; 5
+	BIDDR  |= (1<<BIPNUM);
+    7c92:	23 9a       	sbi	0x04, 3	; 4
+
+#define WDT_OFF_SPECIAL
+
+static inline void bootloader_wdt_off(void)
+{
+	cli();
+    7c94:	f8 94       	cli
+	wdt_reset();
+    7c96:	a8 95       	wdr
+	/* Clear WDRF in MCUSR */
+	MCUSR &= ~(1<<WDRF);
+    7c98:	84 b7       	in	r24, 0x34	; 52
+    7c9a:	87 7f       	andi	r24, 0xF7	; 247
+    7c9c:	84 bf       	out	0x34, r24	; 52
+	/* Write logical one to WDCE and WDE */
+	/* Keep old prescaler setting to prevent unintentional time-out */
+	WDTCSR |= (1<<WDCE) | (1<<WDE);
+    7c9e:	80 91 60 00 	lds	r24, 0x0060
+    7ca2:	88 61       	ori	r24, 0x18	; 24
+    7ca4:	80 93 60 00 	sts	0x0060, r24
+	/* Turn off WDT */
+	WDTCSR = 0x00;
+    7ca8:	10 92 60 00 	sts	0x0060, r1
+#ifdef START_SIMPLE
+	BLDDR  &= ~(1<<BLPNUM);	// Установить вывод кнопки как вход (если загрузчик запускается от джампера)
+	BLPORT |= (1<<BLPNUM);		// Подтянуть вход к +
+#endif
+	// Настроить вывод управления TXE для RS485
+	RSPORT &= ~(1<<RSPNUM); 	// на выходе установить 0 (TXE - не активно)
+    7cac:	5a 98       	cbi	0x0b, 2	; 11
+	RSDDR |= (1<<RSPNUM);		// вывод как выход	
+    7cae:	52 9a       	sbi	0x0a, 2	; 10
+	// Установить скорость порта UART
+	UART_BAUD_HIGH = (UART_CALC_BAUDRATE(BAUDRATE)>>8) & 0xFF;
+    7cb0:	10 92 c5 00 	sts	0x00C5, r1
+	UART_BAUD_LOW = (UART_CALC_BAUDRATE(BAUDRATE) & 0xFF);
+    7cb4:	8f e2       	ldi	r24, 0x2F	; 47
+    7cb6:	80 93 c4 00 	sts	0x00C4, r24
+
+	UART_CTRL = UART_CTRL_DATA;		// Включить RX, TX
+    7cba:	88 e1       	ldi	r24, 0x18	; 24
+    7cbc:	80 93 c1 00 	sts	0x00C1, r24
+	UART_CTRL2 = UART_CTRL2_DATA;	// настроить параметры обмена 8,n,1
+    7cc0:	86 e0       	ldi	r24, 0x06	; 6
+    7cc2:	80 93 c2 00 	sts	0x00C2, r24
+    7cc6:	e1 2c       	mov	r14, r1
+    7cc8:	f1 2c       	mov	r15, r1
+			BLPORT &= ~(1<<BLPNUM);	// установить все по умолчанию
+
+			BIPORT &= ~(1<<BIPNUM);	// Выключить светодиод и установить вывод по умолчанию
+			BIDDR  &= ~(1<<BIPNUM);
+
+			jump_to_app();			// Перейти в секцию приложения
+    7cca:	00 e0       	ldi	r16, 0x00	; 0
+    7ccc:	10 e0       	ldi	r17, 0x00	; 0
+#elif defined(START_WAIT)	// Если работа по времени!!!!!!!!!!!!!!!!!!!!!! (мой случай)
+
+	uint16_t cnt = 0;
+
+	while (1) {
+		if (UART_STATUS & (1<<UART_RXREADY))
+    7cce:	80 91 c0 00 	lds	r24, 0x00C0
+    7cd2:	87 ff       	sbrs	r24, 7
+    7cd4:	04 c0       	rjmp	.+8      	; 0x7cde <main+0x58>
+			if (UART_DATA == START_WAIT_UARTCHAR)
+    7cd6:	80 91 c6 00 	lds	r24, 0x00C6
+    7cda:	83 35       	cpi	r24, 0x53	; 83
+    7cdc:	a1 f0       	breq	.+40     	; 0x7d06 <main+0x80>
+				break;
+
+		if (cnt++ >= WAIT_VALUE) {		// Если время ожидания вышло!
+    7cde:	80 e9       	ldi	r24, 0x90	; 144
+    7ce0:	e8 16       	cp	r14, r24
+    7ce2:	81 e0       	ldi	r24, 0x01	; 1
+    7ce4:	f8 06       	cpc	r15, r24
+    7ce6:	28 f0       	brcs	.+10     	; 0x7cf2 <main+0x6c>
+			BLPORT &= ~(1<<BLPNUM);	// установить все по умолчанию
+    7ce8:	2e 98       	cbi	0x05, 6	; 5
+
+			BIPORT &= ~(1<<BIPNUM);	// Выключить светодиод и установить вывод по умолчанию
+    7cea:	2b 98       	cbi	0x05, 3	; 5
+			BIDDR  &= ~(1<<BIPNUM);
+    7cec:	23 98       	cbi	0x04, 3	; 4
+
+			jump_to_app();			// Перейти в секцию приложения
+    7cee:	f8 01       	movw	r30, r16
+    7cf0:	09 95       	icall
+	#else
+		//round up by default
+		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+	#endif
+
+	__builtin_avr_delay_cycles(__ticks_dc);
+    7cf2:	8f ef       	ldi	r24, 0xFF	; 255
+    7cf4:	9f e8       	ldi	r25, 0x8F	; 143
+    7cf6:	01 97       	sbiw	r24, 0x01	; 1
+    7cf8:	f1 f7       	brne	.-4      	; 0x7cf6 <main+0x70>
+    7cfa:	00 c0       	rjmp	.+0      	; 0x7cfc <main+0x76>
+    7cfc:	00 00       	nop
+    7cfe:	9f ef       	ldi	r25, 0xFF	; 255
+    7d00:	e9 1a       	sub	r14, r25
+    7d02:	f9 0a       	sbc	r15, r25
+    7d04:	e4 cf       	rjmp	.-56     	; 0x7cce <main+0x48>
+		}
+
+		_delay_ms(10);					// задержка для счетчика (400Х10мсек = 4 сек - ожидания после старта для входа в boot)
+	}
+	send_boot(); // Передать приглашение (если конечно надо)
+    7d06:	0e 94 2d 3e 	call	0x7c5a	; 0x7c5a <send_boot>
+static void (*jump_to_app)(void) = 0x0000;
+
+int main(void)
+{
+	uint16_t address = 0;
+	uint8_t device = 0, val;
+    7d0a:	81 2c       	mov	r8, r1
+
+static void (*jump_to_app)(void) = 0x0000;
+
+int main(void)
+{
+	uint16_t address = 0;
+    7d0c:	c1 2c       	mov	r12, r1
+    7d0e:	d1 2c       	mov	r13, r1
+
+		// если запрос - выйти из обновления
+		} 
+		else if (val == 'E') 
+		{
+		wdt_enable(EXIT_WDT_TIME); // активировать собачий таймер для перехода к аппаратному сбросу
+    7d10:	6c e0       	ldi	r22, 0x0C	; 12
+    7d12:	36 2e       	mov	r3, r22
+{
+	// стирание только основной программы (bootloader защищен (не стирается))
+	uint32_t addr = 0;
+	while (APP_END > addr) 
+		{
+		boot_page_erase(addr);		// Выполняет стирание страницы
+    7d14:	73 e0       	ldi	r23, 0x03	; 3
+    7d16:	67 2e       	mov	r6, r23
+		boot_spm_busy_wait();		// Ждать конца стирания страницы.
+		addr += SPM_PAGESIZE;		// перейти к следующей странице
+		}
+	boot_rww_enable();
+    7d18:	e1 e1       	ldi	r30, 0x11	; 17
+    7d1a:	7e 2e       	mov	r7, r30
+
+	do 
+		{
+		data = *tmp++;
+		data |= *tmp++ << 8;
+		boot_page_fill(baddr, data);	// вызов asm подпрограммы.
+    7d1c:	55 24       	eor	r5, r5
+    7d1e:	53 94       	inc	r5
+		baddr += 2;			// выбрать следующее слово в памяти
+		size -= 2;			// уменьшить указатель кол-ва байтов для записи
+		} 
+	while (size);				// выполнять пока все не будет записано
+
+	boot_page_write(pagestart);
+    7d20:	f5 e0       	ldi	r31, 0x05	; 5
+    7d22:	4f 2e       	mov	r4, r31
+#error "Select START_ condition for bootloader in main.c"
+#endif
+
+	for(;;)  // --- Работа загрузчика ---
+	{
+		val = recvchar();
+    7d24:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+		// если запрос - Autoincrement поддерживается?
+		if (val == 'a') 
+    7d28:	81 36       	cpi	r24, 0x61	; 97
+    7d2a:	11 f4       	brne	.+4      	; 0x7d30 <main+0xaa>
+		{
+			sendchar('Y');			// ответ - да, быстрый Autoincrement
+    7d2c:	89 e5       	ldi	r24, 0x59	; 89
+    7d2e:	25 c1       	rjmp	.+586    	; 0x7f7a <main+0x2f4>
+
+		// если запрос - запись адреса
+		} 
+		else if (val == 'A') 
+    7d30:	81 34       	cpi	r24, 0x41	; 65
+    7d32:	49 f4       	brne	.+18     	; 0x7d46 <main+0xc0>
+		{
+			address = recvchar();		//чтение старших 8 MSB адреса
+    7d34:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+    7d38:	90 e0       	ldi	r25, 0x00	; 0
+			address = (address<<8) | recvchar();
+    7d3a:	d8 2e       	mov	r13, r24
+    7d3c:	cc 24       	eor	r12, r12
+    7d3e:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+    7d42:	c8 2a       	or	r12, r24
+    7d44:	fe c0       	rjmp	.+508    	; 0x7f42 <main+0x2bc>
+			sendchar('\r');
+
+		// если запрос - поддержка буфера загрузки
+		} 
+		else if (val == 'b') 
+    7d46:	82 36       	cpi	r24, 0x62	; 98
+    7d48:	41 f4       	brne	.+16     	; 0x7d5a <main+0xd4>
+		{
+			sendchar('Y');					// ответ буфера - загрузка поддерживается
+    7d4a:	89 e5       	ldi	r24, 0x59	; 89
+    7d4c:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+			sendchar((sizeof(gBuffer) >> 8) & 0xFF);	// ответ буфера - размер в байтах
+    7d50:	80 e0       	ldi	r24, 0x00	; 0
+    7d52:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+			sendchar(sizeof(gBuffer) & 0xFF);
+    7d56:	80 e8       	ldi	r24, 0x80	; 128
+    7d58:	10 c1       	rjmp	.+544    	; 0x7f7a <main+0x2f4>
+
+		// если запрос - Старт загрузки буфера
+		} 
+		else if (val == 'B') 
+    7d5a:	82 34       	cpi	r24, 0x42	; 66
+    7d5c:	09 f0       	breq	.+2      	; 0x7d60 <main+0xda>
+    7d5e:	71 c0       	rjmp	.+226    	; 0x7e42 <main+0x1bc>
+		{
+			pagebuf_t size;
+			size = recvchar() << 8;			// загрузка старшего байта в buffersize
+    7d60:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+			size |= recvchar();				// загрузка младшего байта в buffersize
+    7d64:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+    7d68:	98 2e       	mov	r9, r24
+			val = recvchar();				// загрузка типа памяти ('E' или 'F')
+    7d6a:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+    7d6e:	98 2f       	mov	r25, r24
+    7d70:	00 e0       	ldi	r16, 0x00	; 0
+    7d72:	11 e0       	ldi	r17, 0x01	; 1
+static inline void recvBuffer(pagebuf_t size)
+{
+	pagebuf_t cnt;
+	uint8_t *tmp = gBuffer;
+
+	for (cnt = 0; cnt < sizeof(gBuffer); cnt++) 
+    7d74:	b1 2c       	mov	r11, r1
+		{
+		*tmp++ = (cnt < size) ? recvchar() : 0xFF;
+    7d76:	b9 14       	cp	r11, r9
+    7d78:	28 f4       	brcc	.+10     	; 0x7d84 <main+0xfe>
+    7d7a:	99 83       	std	Y+1, r25	; 0x01
+    7d7c:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+    7d80:	99 81       	ldd	r25, Y+1	; 0x01
+    7d82:	01 c0       	rjmp	.+2      	; 0x7d86 <main+0x100>
+    7d84:	8f ef       	ldi	r24, 0xFF	; 255
+    7d86:	f8 01       	movw	r30, r16
+    7d88:	81 93       	st	Z+, r24
+    7d8a:	8f 01       	movw	r16, r30
+static inline void recvBuffer(pagebuf_t size)
+{
+	pagebuf_t cnt;
+	uint8_t *tmp = gBuffer;
+
+	for (cnt = 0; cnt < sizeof(gBuffer); cnt++) 
+    7d8c:	b3 94       	inc	r11
+    7d8e:	f0 e8       	ldi	r31, 0x80	; 128
+    7d90:	bf 12       	cpse	r11, r31
+    7d92:	f1 cf       	rjmp	.-30     	; 0x7d76 <main+0xf0>
+			size = recvchar() << 8;			// загрузка старшего байта в buffersize
+			size |= recvchar();				// загрузка младшего байта в buffersize
+			val = recvchar();				// загрузка типа памяти ('E' или 'F')
+			recvBuffer(size);
+
+			if (device == DEVTYPE) 
+    7d94:	83 e7       	ldi	r24, 0x73	; 115
+    7d96:	88 12       	cpse	r8, r24
+    7d98:	c6 c0       	rjmp	.+396    	; 0x7f26 <main+0x2a0>
+			{
+				if (val == 'F') 			// если это память flash
+    7d9a:	96 34       	cpi	r25, 0x46	; 70
+    7d9c:	09 f0       	breq	.+2      	; 0x7da0 <main+0x11a>
+    7d9e:	34 c0       	rjmp	.+104    	; 0x7e08 <main+0x182>
+		}
+}
+
+static inline uint16_t writeFlashPage(uint16_t waddr, pagebuf_t size)
+{
+	uint32_t pagestart = (uint32_t)waddr<<1;
+    7da0:	86 01       	movw	r16, r12
+    7da2:	20 e0       	ldi	r18, 0x00	; 0
+    7da4:	30 e0       	ldi	r19, 0x00	; 0
+    7da6:	00 0f       	add	r16, r16
+    7da8:	11 1f       	adc	r17, r17
+    7daa:	22 1f       	adc	r18, r18
+    7dac:	33 1f       	adc	r19, r19
+	uint32_t baddr = pagestart;
+	uint16_t data;
+	uint8_t *tmp = gBuffer;
+    7dae:	a0 e0       	ldi	r26, 0x00	; 0
+    7db0:	b1 e0       	ldi	r27, 0x01	; 1
+    7db2:	80 91 00 01 	lds	r24, 0x0100
+}
+
+static inline uint16_t writeFlashPage(uint16_t waddr, pagebuf_t size)
+{
+	uint32_t pagestart = (uint32_t)waddr<<1;
+	uint32_t baddr = pagestart;
+    7db6:	b9 01       	movw	r22, r18
+    7db8:	a8 01       	movw	r20, r16
+    7dba:	90 0e       	add	r9, r16
+	uint8_t *tmp = gBuffer;
+
+	do 
+		{
+		data = *tmp++;
+		data |= *tmp++ << 8;
+    7dbc:	11 96       	adiw	r26, 0x01	; 1
+    7dbe:	ec 91       	ld	r30, X
+    7dc0:	11 97       	sbiw	r26, 0x01	; 1
+    7dc2:	90 e0       	ldi	r25, 0x00	; 0
+    7dc4:	9e 2b       	or	r25, r30
+		boot_page_fill(baddr, data);	// вызов asm подпрограммы.
+    7dc6:	fa 01       	movw	r30, r20
+    7dc8:	0c 01       	movw	r0, r24
+    7dca:	50 92 57 00 	sts	0x0057, r5
+    7dce:	e8 95       	spm
+    7dd0:	11 24       	eor	r1, r1
+
+		baddr += 2;			// выбрать следующее слово в памяти
+    7dd2:	4e 5f       	subi	r20, 0xFE	; 254
+    7dd4:	5f 4f       	sbci	r21, 0xFF	; 255
+    7dd6:	6f 4f       	sbci	r22, 0xFF	; 255
+    7dd8:	7f 4f       	sbci	r23, 0xFF	; 255
+		size -= 2;			// уменьшить указатель кол-ва байтов для записи
+		} 
+	while (size);				// выполнять пока все не будет записано
+    7dda:	94 16       	cp	r9, r20
+    7ddc:	29 f0       	breq	.+10     	; 0x7de8 <main+0x162>
+	uint8_t *tmp = gBuffer;
+
+	do 
+		{
+		data = *tmp++;
+		data |= *tmp++ << 8;
+    7dde:	12 96       	adiw	r26, 0x02	; 2
+    7de0:	8c 91       	ld	r24, X
+    7de2:	12 97       	sbiw	r26, 0x02	; 2
+    7de4:	12 96       	adiw	r26, 0x02	; 2
+    7de6:	ea cf       	rjmp	.-44     	; 0x7dbc <main+0x136>
+		baddr += 2;			// выбрать следующее слово в памяти
+		size -= 2;			// уменьшить указатель кол-ва байтов для записи
+		} 
+	while (size);				// выполнять пока все не будет записано
+
+	boot_page_write(pagestart);
+    7de8:	f8 01       	movw	r30, r16
+    7dea:	40 92 57 00 	sts	0x0057, r4
+    7dee:	e8 95       	spm
+	boot_spm_busy_wait();
+    7df0:	07 b6       	in	r0, 0x37	; 55
+    7df2:	00 fc       	sbrc	r0, 0
+    7df4:	fd cf       	rjmp	.-6      	; 0x7df0 <main+0x16a>
+	boot_rww_enable();		// перейти в RWW секцию
+    7df6:	70 92 57 00 	sts	0x0057, r7
+    7dfa:	e8 95       	spm
+
+	return baddr>>1;
+    7dfc:	76 95       	lsr	r23
+    7dfe:	67 95       	ror	r22
+    7e00:	57 95       	ror	r21
+    7e02:	47 95       	ror	r20
+    7e04:	6a 01       	movw	r12, r20
+    7e06:	9d c0       	rjmp	.+314    	; 0x7f42 <main+0x2bc>
+			{
+				if (val == 'F') 			// если это память flash
+				{
+				address = writeFlashPage(address, size);	// записать в Flash
+				} 
+				else if (val == 'E') 		// если это память eeprom
+    7e08:	95 34       	cpi	r25, 0x45	; 69
+    7e0a:	09 f0       	breq	.+2      	; 0x7e0e <main+0x188>
+    7e0c:	9a c0       	rjmp	.+308    	; 0x7f42 <main+0x2bc>
+    7e0e:	00 e0       	ldi	r16, 0x00	; 0
+    7e10:	11 e0       	ldi	r17, 0x01	; 1
+    7e12:	c6 01       	movw	r24, r12
+    7e14:	80 50       	subi	r24, 0x00	; 0
+    7e16:	91 40       	sbci	r25, 0x01	; 1
+    7e18:	5c 01       	movw	r10, r24
+    7e1a:	f8 01       	movw	r30, r16
+    7e1c:	e9 0d       	add	r30, r9
+    7e1e:	2e 2e       	mov	r2, r30
+    7e20:	c5 01       	movw	r24, r10
+    7e22:	80 0f       	add	r24, r16
+    7e24:	91 1f       	adc	r25, r17
+{
+	uint8_t *tmp = gBuffer;
+
+	do 
+		{
+		eeprom_write_byte( (uint8_t*)address, *tmp++ );
+    7e26:	f8 01       	movw	r30, r16
+    7e28:	61 91       	ld	r22, Z+
+    7e2a:	8f 01       	movw	r16, r30
+    7e2c:	0e 94 c8 3f 	call	0x7f90	; 0x7f90 <__eewr_byte_m324p>
+		address++;			// выбрать следующий байт
+		size--;				// уменьшить указатель кол-ва байтов для записи
+		}
+	while (size);				// выполнять пока все не будет записано
+    7e30:	20 12       	cpse	r2, r16
+    7e32:	f6 cf       	rjmp	.-20     	; 0x7e20 <main+0x19a>
+    7e34:	ff ef       	ldi	r31, 0xFF	; 255
+    7e36:	cf 1a       	sub	r12, r31
+    7e38:	df 0a       	sbc	r13, r31
+    7e3a:	9a 94       	dec	r9
+    7e3c:	c9 0c       	add	r12, r9
+    7e3e:	d1 1c       	adc	r13, r1
+    7e40:	80 c0       	rjmp	.+256    	; 0x7f42 <main+0x2bc>
+			sendchar(0);	// передать 0 байт
+			}
+
+		// если запрос - Чтение блока памяти
+		} 
+		else if (val == 'g') 
+    7e42:	87 36       	cpi	r24, 0x67	; 103
+    7e44:	09 f0       	breq	.+2      	; 0x7e48 <main+0x1c2>
+    7e46:	3e c0       	rjmp	.+124    	; 0x7ec4 <main+0x23e>
+		{
+			pagebuf_t size;
+			size = recvchar() << 8;			// загрузка старшего байта в buffersize
+    7e48:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+			size |= recvchar();				// загрузка младшего байта в buffersize
+    7e4c:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+    7e50:	b8 2e       	mov	r11, r24
+			val = recvchar();				// получить тип памяти ('E' или 'F')
+    7e52:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+
+			if (val == 'F') 				// если это память flash
+    7e56:	86 34       	cpi	r24, 0x46	; 70
+    7e58:	f9 f4       	brne	.+62     	; 0x7e98 <main+0x212>
+	return address;
+}
+
+static inline uint16_t readFlashPage(uint16_t waddr, pagebuf_t size)
+{
+	uint32_t baddr = (uint32_t)waddr<<1;
+    7e5a:	e1 2c       	mov	r14, r1
+    7e5c:	f1 2c       	mov	r15, r1
+    7e5e:	cc 0c       	add	r12, r12
+    7e60:	dd 1c       	adc	r13, r13
+    7e62:	ee 1c       	adc	r14, r14
+    7e64:	ff 1c       	adc	r15, r15
+    7e66:	bc 0c       	add	r11, r12
+#warning "Bootloader not read-protected"
+
+	#if defined(RAMPZ)
+		data = pgm_read_word_far(baddr);
+	#else
+		data = pgm_read_word_near(baddr);
+    7e68:	f6 01       	movw	r30, r12
+    7e6a:	05 91       	lpm	r16, Z+
+    7e6c:	14 91       	lpm	r17, Z
+		else 
+		{
+		data = 0xFFFF; // вставлять пустышки
+		}
+#endif
+		sendchar(data);				// передать младший байт LSB 
+    7e6e:	80 2f       	mov	r24, r16
+    7e70:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+		sendchar((data >> 8));		// передать старший байт MSB
+    7e74:	81 2f       	mov	r24, r17
+    7e76:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+		baddr += 2;					// выбрать следующее слово в памяти (2 байта)
+    7e7a:	82 e0       	ldi	r24, 0x02	; 2
+    7e7c:	c8 0e       	add	r12, r24
+    7e7e:	d1 1c       	adc	r13, r1
+    7e80:	e1 1c       	adc	r14, r1
+    7e82:	f1 1c       	adc	r15, r1
+		size -= 2;					// вычесть два байта из общего числа читаемых байт
+	} 
+	while (size);					// Повторять пока блок не будет прочитан
+    7e84:	bc 10       	cpse	r11, r12
+    7e86:	f0 cf       	rjmp	.-32     	; 0x7e68 <main+0x1e2>
+	return baddr>>1;
+    7e88:	b7 01       	movw	r22, r14
+    7e8a:	a6 01       	movw	r20, r12
+    7e8c:	76 95       	lsr	r23
+    7e8e:	67 95       	ror	r22
+    7e90:	57 95       	ror	r21
+    7e92:	47 95       	ror	r20
+    7e94:	6a 01       	movw	r12, r20
+    7e96:	46 cf       	rjmp	.-372    	; 0x7d24 <main+0x9e>
+
+			if (val == 'F') 				// если это память flash
+			{
+			address = readFlashPage(address, size);		// читать из Flash
+			} 
+			else if (val == 'E') 			// если это память eeprom
+    7e98:	85 34       	cpi	r24, 0x45	; 69
+    7e9a:	09 f0       	breq	.+2      	; 0x7e9e <main+0x218>
+    7e9c:	43 cf       	rjmp	.-378    	; 0x7d24 <main+0x9e>
+    7e9e:	86 01       	movw	r16, r12
+    7ea0:	ac 2c       	mov	r10, r12
+    7ea2:	ab 0c       	add	r10, r11
+
+static inline uint16_t readEEpromPage(uint16_t address, pagebuf_t size)
+{
+	do 
+	{
+	sendchar( eeprom_read_byte( (uint8_t*)address ) );
+    7ea4:	c8 01       	movw	r24, r16
+    7ea6:	0e 94 c0 3f 	call	0x7f80	; 0x7f80 <__eerd_byte_m324p>
+    7eaa:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+	address++;
+    7eae:	0f 5f       	subi	r16, 0xFF	; 255
+    7eb0:	1f 4f       	sbci	r17, 0xFF	; 255
+	size--;						// уменьшить кол-во считываемых байт
+	} 
+	while (size);				// Повторять пока блок не будет прочитан
+    7eb2:	a0 12       	cpse	r10, r16
+    7eb4:	f7 cf       	rjmp	.-18     	; 0x7ea4 <main+0x21e>
+    7eb6:	9f ef       	ldi	r25, 0xFF	; 255
+    7eb8:	c9 1a       	sub	r12, r25
+    7eba:	d9 0a       	sbc	r13, r25
+    7ebc:	ba 94       	dec	r11
+    7ebe:	cb 0c       	add	r12, r11
+    7ec0:	d1 1c       	adc	r13, r1
+    7ec2:	30 cf       	rjmp	.-416    	; 0x7d24 <main+0x9e>
+			address = readEEpromPage(address, size);	// читать из EEPROM
+			}
+
+		// если запрос - Стереть чип
+ 		} 
+		else if (val == 'e') 
+    7ec4:	85 36       	cpi	r24, 0x65	; 101
+    7ec6:	a9 f4       	brne	.+42     	; 0x7ef2 <main+0x26c>
+		{
+		if (device == DEVTYPE) 
+    7ec8:	e3 e7       	ldi	r30, 0x73	; 115
+    7eca:	8e 12       	cpse	r8, r30
+    7ecc:	3a c0       	rjmp	.+116    	; 0x7f42 <main+0x2bc>
+    7ece:	e0 e0       	ldi	r30, 0x00	; 0
+    7ed0:	f0 e0       	ldi	r31, 0x00	; 0
+{
+	// стирание только основной программы (bootloader защищен (не стирается))
+	uint32_t addr = 0;
+	while (APP_END > addr) 
+		{
+		boot_page_erase(addr);		// Выполняет стирание страницы
+    7ed2:	60 92 57 00 	sts	0x0057, r6
+    7ed6:	e8 95       	spm
+		boot_spm_busy_wait();		// Ждать конца стирания страницы.
+    7ed8:	07 b6       	in	r0, 0x37	; 55
+    7eda:	00 fc       	sbrc	r0, 0
+    7edc:	fd cf       	rjmp	.-6      	; 0x7ed8 <main+0x252>
+    7ede:	e0 58       	subi	r30, 0x80	; 128
+    7ee0:	ff 4f       	sbci	r31, 0xFF	; 255
+
+static inline void eraseFlash(void)
+{
+	// стирание только основной программы (bootloader защищен (не стирается))
+	uint32_t addr = 0;
+	while (APP_END > addr) 
+    7ee2:	e1 15       	cp	r30, r1
+    7ee4:	8c e7       	ldi	r24, 0x7C	; 124
+    7ee6:	f8 07       	cpc	r31, r24
+    7ee8:	a1 f7       	brne	.-24     	; 0x7ed2 <main+0x24c>
+		{
+		boot_page_erase(addr);		// Выполняет стирание страницы
+		boot_spm_busy_wait();		// Ждать конца стирания страницы.
+		addr += SPM_PAGESIZE;		// перейти к следующей странице
+		}
+	boot_rww_enable();
+    7eea:	70 92 57 00 	sts	0x0057, r7
+    7eee:	e8 95       	spm
+    7ef0:	28 c0       	rjmp	.+80     	; 0x7f42 <main+0x2bc>
+			}
+		sendchar('\r');
+
+		// если запрос - выйти из обновления
+		} 
+		else if (val == 'E') 
+    7ef2:	85 34       	cpi	r24, 0x45	; 69
+    7ef4:	59 f4       	brne	.+22     	; 0x7f0c <main+0x286>
+		{
+		wdt_enable(EXIT_WDT_TIME); // активировать собачий таймер для перехода к аппаратному сбросу
+    7ef6:	e8 e1       	ldi	r30, 0x18	; 24
+    7ef8:	f0 e0       	ldi	r31, 0x00	; 0
+    7efa:	0f b6       	in	r0, 0x3f	; 63
+    7efc:	f8 94       	cli
+    7efe:	a8 95       	wdr
+    7f00:	e0 93 60 00 	sts	0x0060, r30
+    7f04:	0f be       	out	0x3f, r0	; 63
+    7f06:	30 92 60 00 	sts	0x0060, r3
+    7f0a:	1b c0       	rjmp	.+54     	; 0x7f42 <main+0x2bc>
+		sendchar('\r');				// передать символ
+
+		//если запрос - Войти в режим программирования
+		} 
+		else if (val == 'P') 
+    7f0c:	80 35       	cpi	r24, 0x50	; 80
+    7f0e:	c9 f0       	breq	.+50     	; 0x7f42 <main+0x2bc>
+		{
+		sendchar('\r');
+
+		//если запрос - выйти из режима программирования
+		} 
+		else if (val == 'L') 
+    7f10:	8c 34       	cpi	r24, 0x4C	; 76
+    7f12:	b9 f0       	breq	.+46     	; 0x7f42 <main+0x2bc>
+		{
+		sendchar('\r');
+		//если запрос - типа программатора
+		} 
+		else if (val == 'p') 
+    7f14:	80 37       	cpi	r24, 0x70	; 112
+    7f16:	11 f4       	brne	.+4      	; 0x7f1c <main+0x296>
+		{
+		sendchar('S');		// всегда - serial программатор
+    7f18:	83 e5       	ldi	r24, 0x53	; 83
+    7f1a:	2f c0       	rjmp	.+94     	; 0x7f7a <main+0x2f4>
+
+		//если запрос - тип устройства
+		} 
+		else if (val == 't') 
+    7f1c:	84 37       	cpi	r24, 0x74	; 116
+    7f1e:	29 f4       	brne	.+10     	; 0x7f2a <main+0x2a4>
+		{
+		sendchar(DEVTYPE);		// передать тип уст-ва (Part-Code Boot (0x73))
+    7f20:	83 e7       	ldi	r24, 0x73	; 115
+    7f22:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+		sendchar(0);
+    7f26:	80 e0       	ldi	r24, 0x00	; 0
+    7f28:	28 c0       	rjmp	.+80     	; 0x7f7a <main+0x2f4>
+		// clear and set LED ignored
+		} 
+		else if ((val == 'x') || (val == 'y')) 
+    7f2a:	98 e8       	ldi	r25, 0x88	; 136
+    7f2c:	98 0f       	add	r25, r24
+    7f2e:	92 30       	cpi	r25, 0x02	; 2
+    7f30:	18 f4       	brcc	.+6      	; 0x7f38 <main+0x2b2>
+		{
+		recvchar();
+    7f32:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+    7f36:	05 c0       	rjmp	.+10     	; 0x7f42 <main+0x2bc>
+		sendchar('\r');
+
+		// set device
+		} 
+		else if (val == 'T') 
+    7f38:	84 35       	cpi	r24, 0x54	; 84
+    7f3a:	29 f4       	brne	.+10     	; 0x7f46 <main+0x2c0>
+		{
+		device = recvchar();
+    7f3c:	0e 94 14 3e 	call	0x7c28	; 0x7c28 <recvchar>
+    7f40:	88 2e       	mov	r8, r24
+		sendchar('\r');
+    7f42:	8d e0       	ldi	r24, 0x0D	; 13
+    7f44:	1a c0       	rjmp	.+52     	; 0x7f7a <main+0x2f4>
+		// если запрос - вернуть software identifier
+		} 
+		else if (val == 'S') 
+    7f46:	83 35       	cpi	r24, 0x53	; 83
+    7f48:	19 f4       	brne	.+6      	; 0x7f50 <main+0x2ca>
+		{
+		send_boot();
+    7f4a:	0e 94 2d 3e 	call	0x7c5a	; 0x7c5a <send_boot>
+    7f4e:	ea ce       	rjmp	.-556    	; 0x7d24 <main+0x9e>
+
+		//если запрос - Software Version
+		} 
+		else if (val == 'V') {
+    7f50:	86 35       	cpi	r24, 0x56	; 86
+    7f52:	29 f4       	brne	.+10     	; 0x7f5e <main+0x2d8>
+		sendchar(VERSION_HIGH);
+    7f54:	80 e3       	ldi	r24, 0x30	; 48
+    7f56:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+		sendchar(VERSION_LOW);
+    7f5a:	88 e3       	ldi	r24, 0x38	; 56
+    7f5c:	0e c0       	rjmp	.+28     	; 0x7f7a <main+0x2f4>
+		// возвращаем несколько байт (т.к.
+		// AVRProg программа ожидает "Atmel-byte" 0x1E последним байтом
+		// эти байты показываются в диалоговом окне window приложения)
+		// В общем для совместимости!
+		} 
+		else if (val == 's') 
+    7f5e:	83 37       	cpi	r24, 0x73	; 115
+    7f60:	41 f4       	brne	.+16     	; 0x7f72 <main+0x2ec>
+		{
+		sendchar(SIG_BYTE3);
+    7f62:	88 e0       	ldi	r24, 0x08	; 8
+    7f64:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+		sendchar(SIG_BYTE2);
+    7f68:	85 e9       	ldi	r24, 0x95	; 149
+    7f6a:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+		sendchar(SIG_BYTE1);
+    7f6e:	8e e1       	ldi	r24, 0x1E	; 30
+    7f70:	04 c0       	rjmp	.+8      	; 0x7f7a <main+0x2f4>
+
+		/* ESC */
+		} 
+		else if(val != 0x1b) 
+    7f72:	8b 31       	cpi	r24, 0x1B	; 27
+    7f74:	09 f4       	brne	.+2      	; 0x7f78 <main+0x2f2>
+    7f76:	d6 ce       	rjmp	.-596    	; 0x7d24 <main+0x9e>
+		{
+		sendchar('?');
+    7f78:	8f e3       	ldi	r24, 0x3F	; 63
+    7f7a:	0e 94 1b 3e 	call	0x7c36	; 0x7c36 <sendchar>
+    7f7e:	d2 ce       	rjmp	.-604    	; 0x7d24 <main+0x9e>
+
+00007f80 <__eerd_byte_m324p>:
+    7f80:	f9 99       	sbic	0x1f, 1	; 31
+    7f82:	fe cf       	rjmp	.-4      	; 0x7f80 <__eerd_byte_m324p>
+    7f84:	92 bd       	out	0x22, r25	; 34
+    7f86:	81 bd       	out	0x21, r24	; 33
+    7f88:	f8 9a       	sbi	0x1f, 0	; 31
+    7f8a:	99 27       	eor	r25, r25
+    7f8c:	80 b5       	in	r24, 0x20	; 32
+    7f8e:	08 95       	ret
+
+00007f90 <__eewr_byte_m324p>:
+    7f90:	26 2f       	mov	r18, r22
+
+00007f92 <__eewr_r18_m324p>:
+    7f92:	f9 99       	sbic	0x1f, 1	; 31
+    7f94:	fe cf       	rjmp	.-4      	; 0x7f92 <__eewr_r18_m324p>
+    7f96:	1f ba       	out	0x1f, r1	; 31
+    7f98:	92 bd       	out	0x22, r25	; 34
+    7f9a:	81 bd       	out	0x21, r24	; 33
+    7f9c:	20 bd       	out	0x20, r18	; 32
+    7f9e:	0f b6       	in	r0, 0x3f	; 63
+    7fa0:	f8 94       	cli
+    7fa2:	fa 9a       	sbi	0x1f, 2	; 31
+    7fa4:	f9 9a       	sbi	0x1f, 1	; 31
+    7fa6:	0f be       	out	0x3f, r0	; 63
+    7fa8:	01 96       	adiw	r24, 0x01	; 1
+    7faa:	08 95       	ret
+
+00007fac <_exit>:
+    7fac:	f8 94       	cli
+
+00007fae <__stop_program>:
+    7fae:	ff cf       	rjmp	.-2      	; 0x7fae <__stop_program>

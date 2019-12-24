@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Atmel Studio Solution File, Format Version 11.00
+Project("{54F91283-7BC4-4236-8FF9-10F437C3AD48}") = "km_boot_v02", "km_boot_v02.cproj", "{6C787246-587B-4482-82F7-D6BEFD6BADE9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|AVR = Debug|AVR
+		Release|AVR = Release|AVR
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6C787246-587B-4482-82F7-D6BEFD6BADE9}.Debug|AVR.ActiveCfg = Debug|AVR
+		{6C787246-587B-4482-82F7-D6BEFD6BADE9}.Debug|AVR.Build.0 = Debug|AVR
+		{6C787246-587B-4482-82F7-D6BEFD6BADE9}.Release|AVR.ActiveCfg = Release|AVR
+		{6C787246-587B-4482-82F7-D6BEFD6BADE9}.Release|AVR.Build.0 = Release|AVR
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
